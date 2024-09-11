@@ -1,0 +1,97 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Observer" Id="{adc11630-587f-43db-9eda-5da3af2be89b}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Observer IMPLEMENTS InterfaceObserver
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="subscribe_job_directory" Id="{9fadc14a-702e-4d4c-9c8d-d3d1919e5052}">
+      <Declaration><![CDATA[{warning 'add method implementation '}
+METHOD subscribe_job_directory : BOOL
+VAR_INPUT
+	(* Represent reference to subscribed job object*)
+	executor	: REFERENCE TO jobmgmt.FB_Executor;
+END_VAR
+VAR
+	job_log : STRING;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+job_log := CONCAT(job_log, 'JOB STRUCTURE');
+IF executor.future <> 0 THEN
+	job_log := CONCAT(job_log, '/ FUTURE_NAME : ');
+	job_log := CONCAT(job_log, executor.future.future_name);
+	job_log := CONCAT(job_log, ', ');	
+END_IF
+job_log := CONCAT(job_log, 'JOB_ID : ');
+job_log := CONCAT(job_log, executor.id);
+
+ADSLOGSTR(msgCtrlMask := ADSLOG_MSGTYPE_LOG, msgFmtStr := job_log, strArg := '');]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="subscribe_job_event" Id="{4ef31f8a-7d23-4675-adf8-d567da162687}">
+      <Declaration><![CDATA[{warning 'add method implementation '}
+METHOD subscribe_job_event : BOOL
+VAR_INPUT
+	(* Job state before transition.*)
+	old_state	: jobmgmt.E_FutureExecutionState;
+	(* Job state after transition.*)
+	new_state	: jobmgmt.E_FutureExecutionState;
+	(* File-time at the time of transition.*)
+	record_time	: jobmgmt.T_FILETIME64;
+	(* Reference to job instance of which transition occurs.*)
+	executor	: REFERENCE TO jobmgmt.FB_Executor;
+END_VAR
+VAR_INST
+	fb_timezone_info : FB_GetTimeZoneInformation := (bExecute := TRUE);
+END_VAR
+VAR
+	last_state : STRING;
+	current_state : STRING;
+	text : STRING;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[last_state := TO_STRING(old_state);
+current_state := TO_STRING(new_state);
+
+fb_timezone_info();
+text := FILETIME64_TO_ISO8601(fileTime := record_time, nBias := DINT_TO_INT(fb_timezone_info.tzInfo.bias), bUTC := TRUE,nPrecision := 6);
+text := CONCAT(text, '	');
+text := CONCAT(text, current_state);
+text := CONCAT(text, '	');
+text := CONCAT(text, TO_STRING(executor.nErrorID));
+text := CONCAT(text, '			');
+text := CONCAT(text, executor.future.future_name);
+text := CONCAT(text, '		');
+text := CONCAT(text, executor.id);
+
+
+ADSLOGSTR(msgCtrlMask := ADSLOG_MSGTYPE_LOG, msgFmtStr := text, strArg := '');
+
+subscribe_job_event := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_Observer">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Observer.subscribe_job_directory">
+      <LineId Id="9" Count="9" />
+      <LineId Id="8" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Observer.subscribe_job_event">
+      <LineId Id="34" Count="6" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="41" Count="7" />
+      <LineId Id="14" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

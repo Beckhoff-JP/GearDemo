@@ -2209,7 +2209,7 @@ External Setpoint Generation:
 		</Motion>
 		<Plc>
 			<Project GUID="{53A7352A-848E-47BB-B424-1CCEC003E5BF}" Name="PLC" PrjFilePath="PLC\PLC.plcproj" TmcFilePath="PLC\PLC.tmc" ReloadTmc="true" AmsPort="851" FileArchiveSettings="#x000e" SymbolicMapping="true">
-				<Instance Id="#x08502000" TcSmClass="TComPlcObjDef" KeepUnrestoredLinks="2" TmcPath="PLC\PLC.tmc" TmcHash="{36201763-4438-1BB7-B218-8FD82F6A0FB0}">
+				<Instance Id="#x08502000" TcSmClass="TComPlcObjDef" KeepUnrestoredLinks="2" TmcPath="PLC\PLC.tmc" TmcHash="{81729BC7-A959-66EA-0958-60AF8EA73C33}">
 					<Name>PLC Instance</Name>
 					<CLSID ClassFactory="TcPlc30">{08500001-0000-0000-F000-000000000064}</CLSID>
 					<Vars VarGrpType="1">
@@ -2261,6 +2261,116 @@ External Setpoint Generation:
 				</Instance>
 			</Project>
 		</Plc>
+		<Analytics>
+			<Name>ANALYTICS</Name>
+			<ImageId>281</ImageId>
+			<Symbols>
+				<Symbol>Term 1 (EK1101).Drive 2 (EL7201-0011).DS402 Statusword.Statusword</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 2 (EL7201-0011).DS402 Position actual value.Position actual value</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 2 (EL7201-0011).DS402 Following error actual value.Following error actual value</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 3 (EL7201-0011).DS402 Statusword.Statusword</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 3 (EL7201-0011).DS402 Position actual value.Position actual value</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 3 (EL7201-0011).DS402 Following error actual value.Following error actual value</Symbol>
+				<Symbol>Term 1 (EK1101).ID.ID</Symbol>
+				<Symbol>Inputs.Frm0State</Symbol>
+				<Symbol>Inputs.Frm0WcState</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 3 (EL7201-0011).WcState.WcState</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 2 (EL7201-0011).WcState.WcState</Symbol>
+				<Symbol>Term 1 (EK1101).WcState.WcState</Symbol>
+				<Symbol>Inputs.Frm0InputToggle</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 3 (EL7201-0011).WcState.InputToggle</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 2 (EL7201-0011).WcState.InputToggle</Symbol>
+				<Symbol>Term 1 (EK1101).WcState.InputToggle</Symbol>
+				<Symbol>Inputs.SlaveCount</Symbol>
+				<Symbol>Inputs.DevState</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 2 (EL7201-0011).DS402 Controlword.Controlword</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 2 (EL7201-0011).DS402 Target position.Target position</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 3 (EL7201-0011).DS402 Controlword.Controlword</Symbol>
+				<Symbol>Term 1 (EK1101).Drive 3 (EL7201-0011).DS402 Target position.Target position</Symbol>
+				<Symbol>Outputs.Frm0Ctrl</Symbol>
+				<Symbol>Outputs.Frm0WcCtrl</Symbol>
+				<Symbol>Outputs.DevCtrl</Symbol>
+				<Symbol>PlcTask Inputs.MAIN.stAxis1.NcToPlc</Symbol>
+				<Symbol>PlcTask Inputs.MAIN.stAxis2.NcToPlc</Symbol>
+				<Symbol>PlcTask Outputs.MAIN.stAxis1.PlcToNc</Symbol>
+				<Symbol>PlcTask Outputs.MAIN.stAxis2.PlcToNc</Symbol>
+				<Symbol>PlcTask Internal.MAIN.main_job._state</Symbol>
+				<Symbol>PlcTask Internal.MAIN.reset_job._state</Symbol>
+			</Symbols>
+			<AddiStreamDescription>
+				<Address></Address>
+				<Longitude></Longitude>
+				<Latitude></Latitude>
+			</AddiStreamDescription>
+			<SystemAlias></SystemAlias>
+			<DataLogger GUID="{EB5FE736-EFA2-EF4E-B111-907D0A7B86D6}">
+				<Name>Data Logger 1</Name>
+				<Name>Data Logger 1</Name>
+				<ParameterValues>
+					<Value>
+						<Name>Data Format</Name>
+						<EnumText>ANALYTICS_FORMAT_MQTT_BINARY</EnumText>
+					</Value>
+					<Value>
+						<Name>Data Compression</Name>
+						<EnumText>ANALYTICS_COMPRESSION_RL</EnumText>
+					</Value>
+					<Value>
+						<Name>Max. Compression Compare Width</Name>
+						<EnumText>ANALYTICS_COMP_WIDTH_8</EnumText>
+					</Value>
+					<Value>
+						<Name>MQTT Host Name</Name>
+						<String>[2400:4153:ca20:3100:e72a:66ad:8cb:1927]</String>
+					</Value>
+					<Value>
+						<Name>MQTT Tcp Port</Name>
+						<Value>1883</Value>
+					</Value>
+					<Value>
+						<Name>MQTT Main Topic</Name>
+						<String>Beckhoff</String>
+					</Value>
+					<Value>
+						<Name>MQTT Client ID</Name>
+						<String></String>
+					</Value>
+					<Value>
+						<Name>MQTT User Name</Name>
+						<String></String>
+					</Value>
+					<Value>
+						<Name>MQTT Password</Name>
+						<String></String>
+					</Value>
+				</ParameterValues>
+				<Stream Caller="#x03040020" Adi="#x03040020" Id="#x02040001" CntAds="#x00000020" CntFile="#x0000004f" CntRing="#x00000002" SamplingDivider="1" DeviceStream="true">
+					<Name>Device 2 (EtherCAT).Image</Name>
+					<DisplayName>DeviceStream1</DisplayName>
+					<FileDir>%TC_BOOTPRJPATH%</FileDir>
+				</Stream>
+				<Stream Caller="#x08502003" Adi="#x08502000" Id="#x02040002" CntAds="#x00000020" CntFile="#x0000009d" CntRing="#x00000002" SamplingDivider="1">
+					<Name>PLC.PLC Instance.PlcTask</Name>
+					<DisplayName>PlcStream1</DisplayName>
+					<LoggerObject Enabled="true">
+						<AreaName></AreaName>
+						<SymName></SymName>
+						<HierName>PlcTask Inputs</HierName>
+					</LoggerObject>
+					<LoggerObject Enabled="true">
+						<AreaName></AreaName>
+						<SymName></SymName>
+						<HierName>PlcTask Outputs</HierName>
+					</LoggerObject>
+					<LoggerObject Enabled="true">
+						<AreaName>PlcTask Internal</AreaName>
+						<SymName>MAIN.main_job._state</SymName>
+						<HierName>PlcTask Internal.MAIN.main_job._state</HierName>
+					</LoggerObject>
+					<FileDir>%TC_BOOTPRJPATH%</FileDir>
+				</Stream>
+			</DataLogger>
+		</Analytics>
 		<Io>
 			<Device Id="2" DevType="111" DevFlags="#x0003" AmsPort="28674" AmsNetId="169.254.89.239.3.1" RemoteName="Device 2 (EtherCAT)" InfoImageId="3">
 				<Name>Device 2 (EtherCAT)</Name>
