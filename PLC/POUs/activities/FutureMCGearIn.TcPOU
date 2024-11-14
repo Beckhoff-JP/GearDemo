@@ -9,6 +9,7 @@ VAR_OUTPUT
 END_VAR
 VAR
 	_fb_gear_in	: MC_GearIn;
+	_mc_reset	: MC_Reset;
 	_axis_main: REFERENCE TO AXIS_REF;
 	_axis_sub: REFERENCE TO AXIS_REF;
 	_ratio_numerator	: MC_LREAL := 1;
@@ -20,11 +21,50 @@ VAR
 	_buffer_mode : MC_BufferMode;
 	_error_id :UDINT;
 	_exec_state : UDINT;
+	_reset_state : UDINT;
 END_VAR
 ]]></Declaration>
     <Implementation>
       <ST><![CDATA[]]></ST>
     </Implementation>
+    <Method Name="error_reset" Id="{152daf12-3e4a-4bad-860e-f57ffb1137cc}">
+      <Declaration><![CDATA[METHOD error_reset : BOOL // Must be overrided if future has any errors.
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_error_id := _fb_gear_in.ErrorID;
+IF _error_id <> 0 THEN
+	CASE _reset_state OF
+		0:
+			_mc_reset(Axis := _axis_main, Execute := FALSE);
+			_mc_reset(Axis:= _axis_main, Execute := TRUE );
+			_reset_state := 1;
+		1:
+			IF _mc_reset.Busy THEN
+				_mc_reset(Axis:= _axis_main,Execute := FALSE);
+			END_IF
+			IF _mc_reset.Done AND NOT _mc_reset.Busy THEN
+				_reset_state := 2;
+			END_IF
+		2:
+			_mc_reset(Axis := _axis_sub, Execute := FALSE);
+			_mc_reset(Axis:= _axis_sub, Execute := TRUE );
+			_reset_state := 3;
+		3:
+			IF _mc_reset.Busy THEN
+				_mc_reset(Axis:= _axis_main,Execute := FALSE);
+			END_IF
+			IF _mc_reset.Done AND NOT _mc_reset.Busy THEN
+				_reset_state := 4;
+			END_IF
+		4:
+			_mc_reset(Axis:= _axis_sub,Execute := FALSE);
+			error_reset := TRUE;
+	END_CASE
+ELSE
+	error_reset := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="execute" Id="{38e13172-ea1a-4a10-9c1c-7219caa32009}">
       <Declaration><![CDATA[METHOD execute : BOOL // Return TRUE if finish.
 ]]></Declaration>
@@ -62,6 +102,10 @@ CASE _exec_state OF
 		
 END_CASE
 
+IF _error_id = 0 AND _fb_gear_in.ErrorID <> 0 THEN
+	_reset_state := 0;
+END_IF
+
 _error_id := _fb_gear_in.ErrorID;
 ]]></ST>
       </Implementation>
@@ -74,6 +118,7 @@ VAR
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[_exec_state := 0;
+_reset_state := 0;
 _error_id := _fb_gear_in.ErrorID;
 init := TRUE;]]></ST>
       </Implementation>
@@ -139,6 +184,21 @@ _axis_sub REF= axis_sub;
     <LineIds Name="FutureMCGearIn">
       <LineId Id="9" Count="0" />
     </LineIds>
+    <LineIds Name="FutureMCGearIn.error_reset">
+      <LineId Id="32" Count="0" />
+      <LineId Id="4" Count="9" />
+      <LineId Id="22" Count="2" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="25" Count="2" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="48" Count="4" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="17" Count="2" />
+    </LineIds>
     <LineIds Name="FutureMCGearIn.execute">
       <LineId Id="111" Count="0" />
       <LineId Id="107" Count="0" />
@@ -162,12 +222,14 @@ _axis_sub REF= axis_sub;
       <LineId Id="155" Count="4" />
       <LineId Id="153" Count="0" />
       <LineId Id="121" Count="0" />
+      <LineId Id="164" Count="3" />
       <LineId Id="139" Count="0" />
       <LineId Id="138" Count="0" />
       <LineId Id="3" Count="0" />
     </LineIds>
     <LineIds Name="FutureMCGearIn.init">
       <LineId Id="6" Count="0" />
+      <LineId Id="15" Count="0" />
       <LineId Id="10" Count="0" />
       <LineId Id="4" Count="0" />
     </LineIds>

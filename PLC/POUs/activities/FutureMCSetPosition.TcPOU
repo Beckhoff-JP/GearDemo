@@ -9,12 +9,14 @@ VAR_OUTPUT
 END_VAR
 VAR
 	_fb_set_position	: MC_SetPosition;
+	_mc_reset	: MC_Reset;
 	_axis: REFERENCE TO AXIS_REF;
 	_position	: MC_LREAL;
 	_mode		: BOOL;
 	_option 	: ST_SetPositionOptions;
 	_error_id :UDINT;
 	_exec_state : UDINT;
+	_reset_state : UDINT;
 END_VAR
 ]]></Declaration>
     <Implementation>
@@ -25,6 +27,41 @@ END_VAR
 ]]></Declaration>
       <Implementation>
         <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="error_reset" Id="{77846a94-685e-459c-8b27-d7ec9118c6c4}">
+      <Declaration><![CDATA[METHOD error_reset : BOOL // Must be overrided if future has any errors.
+VAR_INST
+	watch_delay  : TON;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_error_id := _fb_set_position.ErrorID;
+IF _error_id <> 0 THEN
+	CASE _reset_state OF
+		0:
+			_mc_reset(Axis := _axis, Execute := FALSE);
+			_mc_reset(Axis:= _axis, Execute := TRUE );
+			watch_delay(IN := FALSE);
+			_reset_state := 1;
+		1:
+			IF _mc_reset.Done THEN
+				_mc_reset(Axis:= _axis,Execute := FALSE);
+				_reset_state := 2;
+			END_IF
+		2:
+			error_reset := TRUE;
+			watch_delay(IN := TRUE, PT := T#1S);
+			IF watch_delay.Q THEN
+				_reset_state := 0;
+			END_IF
+	END_CASE
+	
+	IF _error_id = 0 THEN
+		_reset_state := 0;
+	END_IF
+ELSE
+	error_reset := TRUE;
+END_IF]]></ST>
       </Implementation>
     </Method>
     <Method Name="execute" Id="{6e6f1e42-98ad-4c1b-b340-999b8148b2fe}">
@@ -114,6 +151,22 @@ _position := position;
     <LineIds Name="FutureMCSetPosition.abort">
       <LineId Id="3" Count="0" />
     </LineIds>
+    <LineIds Name="FutureMCSetPosition.error_reset">
+      <LineId Id="32" Count="0" />
+      <LineId Id="4" Count="4" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="9" Count="3" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="38" Count="2" />
+      <LineId Id="14" Count="2" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="17" Count="2" />
+    </LineIds>
     <LineIds Name="FutureMCSetPosition.execute">
       <LineId Id="109" Count="2" />
       <LineId Id="103" Count="0" />
@@ -125,7 +178,7 @@ _position := position;
       <LineId Id="113" Count="1" />
       <LineId Id="116" Count="1" />
       <LineId Id="112" Count="0" />
-      <LineId Id="118" Count="0" />
+      <LineId Id="121" Count="0" />
       <LineId Id="100" Count="0" />
       <LineId Id="98" Count="0" />
       <LineId Id="3" Count="0" />

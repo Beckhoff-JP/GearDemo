@@ -9,6 +9,7 @@ VAR_OUTPUT
 END_VAR
 VAR
 	_fb_gear_out	: MC_GearOut;
+	_mc_reset	: MC_Reset;
 	_axis_sub: REFERENCE TO AXIS_REF;
 	_ratio_numerator	: MC_LREAL := 1;
 	_ratio_denominator	: UINT := 1;
@@ -20,6 +21,29 @@ END_VAR
     <Implementation>
       <ST><![CDATA[]]></ST>
     </Implementation>
+    <Method Name="error_reset" Id="{52e60225-068f-4e49-a10a-be6c8142996b}">
+      <Declaration><![CDATA[METHOD error_reset : BOOL // Must be overrided if future has any errors.
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _error_id <> 0 THEN
+	CASE _exec_state OF
+		0:
+			_mc_reset(Axis := _axis_sub, Execute := FALSE);
+			_mc_reset(Axis:= _axis_sub, Execute := TRUE );
+			_exec_state := 1;
+		1:
+			IF _mc_reset.Busy THEN
+				_mc_reset(Axis:= _axis_sub,Execute := FALSE);
+			END_IF
+	END_CASE
+	
+	_error_id := _mc_reset.ErrorID;
+	error_reset := _mc_reset.Done;
+ELSE
+	error_reset := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="execute" Id="{10b8fb9d-57b5-428e-b814-1bfc496da251}">
       <Declaration><![CDATA[METHOD execute : BOOL // Return TRUE if finish.
 ]]></Declaration>
@@ -111,6 +135,11 @@ END_VAR
     </Method>
     <LineIds Name="FutureMCGearOut">
       <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FutureMCGearOut.error_reset">
+      <LineId Id="4" Count="12" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="17" Count="2" />
     </LineIds>
     <LineIds Name="FutureMCGearOut.execute">
       <LineId Id="111" Count="0" />

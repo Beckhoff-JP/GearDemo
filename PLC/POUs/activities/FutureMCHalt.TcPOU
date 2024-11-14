@@ -10,6 +10,7 @@ END_VAR
 VAR
 	_axis: REFERENCE TO AXIS_REF;
 	_fb_halt	: MC_Halt;
+	_mc_reset	: MC_Reset;
 	_deceleration: MC_LREAL;
 	_jerk		: MC_LREAL;
 	_option : ST_MoveOptions;
@@ -21,6 +22,29 @@ END_VAR
     <Implementation>
       <ST><![CDATA[]]></ST>
     </Implementation>
+    <Method Name="error_reset" Id="{207df50c-02d9-4f34-a222-e45f864c0020}">
+      <Declaration><![CDATA[METHOD error_reset : BOOL // Must be overrided if future has any errors.
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _error_id <> 0 THEN
+	CASE _exec_state OF
+		0:
+			_mc_reset(Axis := _axis, Execute := FALSE);
+			_mc_reset(Axis:= _axis, Execute := TRUE );
+			_exec_state := 1;
+		1:
+			IF _mc_reset.Busy THEN
+				_mc_reset(Axis:= _axis,Execute := FALSE);
+			END_IF
+	END_CASE
+	
+	_error_id := _mc_reset.ErrorID;
+	error_reset := _mc_reset.Done;
+ELSE
+	error_reset := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="execute" Id="{fb168655-c2e0-4f32-bbeb-489e0cb4dd0f}">
       <Declaration><![CDATA[METHOD execute : BOOL // Return TRUE if finish.
 ]]></Declaration>
@@ -104,6 +128,11 @@ _jerk := jerk;
     </Method>
     <LineIds Name="FutureMCHalt">
       <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FutureMCHalt.error_reset">
+      <LineId Id="4" Count="12" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="17" Count="2" />
     </LineIds>
     <LineIds Name="FutureMCHalt.execute">
       <LineId Id="111" Count="0" />

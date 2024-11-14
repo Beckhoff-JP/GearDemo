@@ -8,7 +8,6 @@ VAR_OUTPUT
 END_VAR
 VAR
 	_axis: REFERENCE TO AXIS_REF;
-	_enable : BOOL;
 	_override: LREAL := 100.0;
 	_enable_positive:	BOOL := TRUE; 
 	_enable_negative:	BOOL := TRUE;
@@ -32,7 +31,7 @@ END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[_p_future := __NEW(FutureMCPower);
 _p_future^.future_name := future_name;
-_p_future^.set_parameters(_axis, _enable);
+_p_future^.set_parameters(_axis);
 _p_future^.set_options(_enable_positive, _enable_negative, _override, _buffer_mode, _option);
 create_future := _p_future^;]]></ST>
       </Implementation>
@@ -79,13 +78,10 @@ _option := option;
       <Declaration><![CDATA[METHOD set_parameters : BOOL
 VAR_INPUT
 	axis : REFERENCE TO AXIS_REF;
-	enable: BOOL;
 END_VAR
 ]]></Declaration>
       <Implementation>
         <ST><![CDATA[_axis REF= axis;
-_enable := enable;
-
 ]]></ST>
       </Implementation>
     </Method>
@@ -109,8 +105,6 @@ _enable := enable;
       <LineId Id="11" Count="0" />
     </LineIds>
     <LineIds Name="FutureMCPowerCreator.set_parameters">
-      <LineId Id="26" Count="0" />
-      <LineId Id="29" Count="0" />
       <LineId Id="27" Count="0" />
       <LineId Id="17" Count="0" />
     </LineIds>

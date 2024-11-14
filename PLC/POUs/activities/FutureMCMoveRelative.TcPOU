@@ -9,7 +9,8 @@ VAR_OUTPUT
 END_VAR
 VAR
 	_fb_move_rel	: MC_MoveRelative;
-	_executor		: FB_Executor;
+	_mc_reset	: MC_Reset;
+	_abort_executor		: FB_Executor;
 	_axis: REFERENCE TO AXIS_REF;
 	_distance : MC_LREAL;
 	_velocity : MC_LREAL;
@@ -38,20 +39,43 @@ END_VAR
 		_exec_state := 0;
 		future_halt.set_parameters(_axis, _deceleration, _jerk);
 		future_halt.future_name := 'HALT MOVE_RELATIVE';
-		_executor.future := future_halt;
+		_abort_executor.future := future_halt;
 		_abort_state := 1;
 	1:
-		IF _executor.execute() AND _executor.nErrorID = 0 THEN
+		IF _abort_executor.execute() AND _abort_executor.nErrorID = 0 THEN
 			_abort_state := 2;
 		END_IF
 		
-		IF _executor.current_state = E_FutureExecutionState.wait_for_process THEN
-			_executor.start();
+		IF _abort_executor.current_state = E_FutureExecutionState.wait_for_process THEN
+			_abort_executor.start();
 		END_IF
 	2:
 		abort := TRUE;
 END_CASE
 ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="error_reset" Id="{446c0a88-4a07-4bfd-bcd5-e25cc2907bc1}">
+      <Declaration><![CDATA[METHOD error_reset : BOOL // Must be overrided if future has any errors.
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _error_id <> 0 THEN
+	CASE _exec_state OF
+		0:
+			_mc_reset(Axis := _axis, Execute := FALSE);
+			_mc_reset(Axis:= _axis, Execute := TRUE );
+			_exec_state := 1;
+		1:
+			IF _mc_reset.Busy THEN
+				_mc_reset(Axis:= _axis,Execute := FALSE);
+			END_IF
+	END_CASE
+	
+	_error_id := _mc_reset.ErrorID;
+	error_reset := _mc_reset.Done;
+ELSE
+	error_reset := TRUE;
+END_IF]]></ST>
       </Implementation>
     </Method>
     <Method Name="execute" Id="{20088402-d158-4220-ba48-4075b6c9821d}">
@@ -163,6 +187,11 @@ _buffer_mode := buffer_mode;]]></ST>
       <LineId Id="18" Count="8" />
       <LineId Id="11" Count="0" />
       <LineId Id="8" Count="0" />
+    </LineIds>
+    <LineIds Name="FutureMCMoveRelative.error_reset">
+      <LineId Id="4" Count="12" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="17" Count="2" />
     </LineIds>
     <LineIds Name="FutureMCMoveRelative.execute">
       <LineId Id="111" Count="0" />

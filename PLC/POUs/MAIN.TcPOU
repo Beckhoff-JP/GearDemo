@@ -3,51 +3,40 @@
   <POU Name="MAIN" Id="{22afa678-1e60-4864-9c5a-6f323d8f260f}" SpecialFunc="None">
     <Declaration><![CDATA[PROGRAM MAIN
 VAR
-	main_job :FB_Executor;
-	reset_job : FB_Executor;
+	work_number	: ULINT;
+	act_dc_time : T_DCTIME64;
+	dc_task_time : T_DCTIME64;
+	dc_tick_time : T_DCTIME64;
+	diff_time : T_DCTIME64;
+	fbConvertDcTimeToPos : ConvertDcTimeToPos;
+	position_at_task_start_point : LREAL;
+	position_diff : LREAL;
+	dc_time_array : ARRAY [0..1] OF T_DCTIME32;
+
+	fbPower1:mc_power;
+	fbPower2:mc_power;
+	fbJog:MC_Jog;
+	basic_job : FB_Executor;
+	demo_job : FB_Executor;
+	gear_in_job : FB_Executor;
+	init_pos_job : FB_Executor;
+	jog_plus_job : FB_Executor;
+	jog_minus_job : FB_Executor;
 	fb_observer : FB_Observer;
-	_job_temp	: REFERENCE TO FB_Executor; // reference to job object for working.
+	job_reset : BOOL;
 	
-	mc_power_future: POINTER TO FutureMCPower;
 	mc_power_future_creator: FutureMCPowerCreator;
-
-	mc_reset_future: POINTER TO FutureMCReset;
 	mc_reset_future_creator: FutureMCResetCreator;
-
-	
-	mc_set_position_future: POINTER TO FutureMCSetPosition;
 	mc_set_position_future_creator: FutureMCSetPositionCreator;
-
-	
-	initial_parallel_job_container : REFERENCE TO FB_Executor;
-	_axis1_initial_job : REFERENCE TO FB_Executor;
-	_axis2_initial_job : REFERENCE TO FB_Executor;
-	
-	demo_job_container : REFERENCE TO FB_Executor;
-
-	mc_gear_in_future : POINTER TO FutureMCGearIn;
+	mc_inching_future_creator : FutureMCInchingCreator;
 	mc_gear_in_future_creator : FutureMCGearInCreator;
-
-	mc_gear_out_future : POINTER TO FutureMCGearOut;
 	mc_gear_out_future_creator : FutureMCGearOutCreator;
-
-	mc_move_rel_future : POINTER TO FutureMCMoveRelative;
 	mc_move_rel_future_creator : FutureMCMoveRelativeCreator;
-
-	mc_move_abs_future : POINTER TO FutureMCMoveAbsolute;
 	mc_move_abs_future_creator : FutureMCMoveAbsoluteCreator;
-
-	mc_move_velocity_future: POINTER TO FutureMCMoveVelocity;
 	mc_move_velocity_future_creator: FutureMCMoveVelocityCreator;
-
-	mc_stop_future: POINTER TO FutureMCStop;
 	mc_stop_future_creator: FutureMCStopCreator;
-	
-	sleep : POINTER TO FutureSleep;
 	sleep_creator : FutureSleepCreator;
 
-
-	fbJog:MC_Jog;
 	
 	iState:INT;
 	stAxis1:axis_ref;
@@ -56,6 +45,8 @@ VAR
 	bJogPlus: BOOL;
 	bJogMinus: BOOL;
 	bPower: BOOL;
+	_bPower : BOOL;
+	iPowerState : UINT;
 	bReset:BOOL;
 	bError:BOOL;
 	bAllAxisPowerOn: BOOL;
@@ -64,307 +55,131 @@ VAR
 	boot_up : BOOL := TRUE;
 	i: UINT;
 	
-	(*
-	fbPower1:mc_power;
-	fbPower2:mc_power;
-	fbReset1:mc_reset;
-	fbReset2:mc_reset;
-	fbSetPosition1:mc_setposition;
-	fbSetPosition2:mc_setposition;
-	fbGearIn:MC_GearIn;
-	fbGearOut:MC_GearOut;
-	fbJog:MC_Jog;
-
-	bAllAxisPowerOn: BOOL;
-	bInsync:BOOL;
-	iMoveCount:INT;
-	iMoveCount1:INT;
-	lrDiatance:LREAL;
-	tWaitTimer1:TON;
-	tWaitTimer2:TON;
-	tWaitTimer3:TON;
-	tWaitTimer4:TON;
-	tWaitTimer5:TON;
-	tWaitTimer6:TON;
-	tWaitTimer7:TON;
-	tWaitTimer8:TON;
-	fbMoveVelo:MC_MoveVelocity;
-	fbMoveRel:MC_MoveRelative;
-	fbMoveAbs1:MC_MoveAbsolute;
-	fbMoveAbs2:MC_MoveAbsolute;
-	fbMoveAbs3:MC_MoveAbsolute;
-	fbMoveAbs4:MC_MoveAbsolute;
-	fbMoveAbs5:MC_MoveAbsolute;
-	fbStop:MC_Halt;
-
-	*)
+	quit: INT;
 END_VAR
 ]]></Declaration>
     <Implementation>
-      <ST><![CDATA[IF boot_up THEN
-	reset_job.create_container(ContainerType.PARALLEL_QUEUE, 'RESET_JOB');
-	reset_job.continuous_mode := TRUE;
-	reset_job.job_event_reporter := fb_observer;
+      <ST><![CDATA[
+act_dc_time := F_GetActualDcTime64();
+dc_task_time := F_GetCurDcTaskTime64();
+dc_tick_time := F_GetCurDcTickTime64();
+
+MEMCPY(ADR(dc_time_array), ADR(dc_task_time), SIZEOF(dc_task_time));
+
+fbConvertDcTimeToPos(nAxisId := 1, nSubIdx := 16#10000, dcTime := dc_time_array[0] + 300000);
+position_at_task_start_point := fbConvertDcTimeToPos.fPosition;
+position_diff := stAxis1.NcToPlc.ActPos - fbConvertDcTimeToPos.fPosition;
+
+diff_time := act_dc_time - dc_task_time;
+
+IF boot_up THEN
+	basic_job.create_container(ContainerType.PARALLEL_QUEUE, 'BASIC');
+	basic_job.continuous_mode := TRUE;
+	basic_job.id := 'M1';
+	basic_job.job_event_reporter := fb_observer;
+	JobCreate_PosInit(init_pos_job);
+	JobCreate_GearIn(gear_in_job);
+	JobCreateDemo(demo_job);
 	
-	main_job.create_container(ContainerType.QUEUE, 'MAIN_JOB');
-	main_job.continuous_mode := FALSE;
-	main_job.job_event_reporter := fb_observer;
 	
+
+	mc_inching_future_creator.set_parameters(stAxis2, TRUE,1 , 100);
+	jog_plus_job.create_future(mc_inching_future_creator,'JOG_PLUS');
+	
+	mc_inching_future_creator.set_parameters(stAxis2, FALSE, 1, 100);		
+	jog_minus_job.create_future(mc_inching_future_creator,'JOG_MINUS');
+
 	boot_up := FALSE;
 END_IF
 
-IF stAxis1.NcToPlc.ErrorCode <> 0 AND stAxis2.NcToPlc.ErrorCode <> 0 THEN
-	main_job.abort();
-	bStart := FALSE;
-	bError:=TRUE;
-END_IF
 
-IF bReset AND reset_job.children <> 0 THEN
-	reset_job.init();
-	_job_temp REF= reset_job.children.create_future(mc_reset_future_creator,'AXIS1_RESET');
-	IF __ISVALIDREF(_job_temp) THEN
-		IF __QUERYPOINTER(_job_temp.future, mc_reset_future) THEN
-			mc_reset_future^.set_parameters(stAxis1);
-		END_IF		
+fbPower1(Axis := stAxis1, Enable := bPower, Enable_Positive := TRUE, Enable_Negative := TRUE, Override := 100.0);
+fbPower2(Axis := stAxis2, Enable := bPower, Enable_Positive := TRUE, Enable_Negative := TRUE, Override := 100.0);
+
+(*
+IF NOT fbPower1.Status AND NOT fbPower2.Status THEN
+	IF demo_job.reset(FALSE) THEN
+		iState := 0;
 	END_IF
-	_job_temp REF= reset_job.children.create_future(mc_reset_future_creator,'AXIS2_RESET');
-	IF __ISVALIDREF(_job_temp) THEN
-		IF __QUERYPOINTER(_job_temp.future, mc_reset_future) THEN
-			mc_reset_future^.set_parameters(stAxis2);
-		END_IF
-	END_IF
-	bReset := FALSE;
 END_IF
+*)
 
-
-IF reset_job.execute() THEN
-	iState := 0;
-	//main_job.start();
-END_IF
-
-IF reset_job.current_state = E_FutureExecutionState.wait_for_process THEN
-	reset_job.start();
-END_IF
-
-
-CASE iState OF 
-	0:	
-		IF bPower THEN
-			IF main_job.reset() THEN
+CASE iState OF
+	0:
+		IF fbPower1.Status AND fbPower2.Status THEN
+			IF init_pos_job.init() THEN
+				basic_job.children.append_job(init_pos_job);
 				iState := 1;
 			END_IF
-		END_IF	
+		END_IF
+	1:
+		IF init_pos_job.done THEN
+			iState := 2;
+		END_IF
+	2:
+		//fbJog(Axis:=stAxis1 , JogForward:=bJogPlus ,JogBackwards:=bJogMinus, Position := 1, Velocity := 100, Mode := E_JogMode.MC_JOGMODE_INCHING );
+		IF bJogPlus THEN
+			IF jog_plus_job.init() THEN
+				basic_job.children.append_job(jog_plus_job);
+				bJogPlus := FALSE;				
+			END_IF
+		END_IF
+		
+		IF bJogMinus THEN
+			IF jog_minus_job.init() THEN
+				basic_job.children.append_job(jog_minus_job);
+				bJogMinus := FALSE;				
+			END_IF
+		END_IF
 
-	1: // initialization
-			
-		initial_parallel_job_container REF= main_job.children.create_container(ContainerType.PARALLEL, 'POWER_ON');
-		
-		// create batch job container for each axis initialization jobs
-		_axis1_initial_job REF= initial_parallel_job_container.children.create_container(ContainerType.BATCH, 'AXIS_1_POWER');
-		_axis2_initial_job REF= initial_parallel_job_container.children.create_container(ContainerType.BATCH, 'AXIS_2_POWER');
-		
-		// axis1 
-		// power on
-		_job_temp REF= _axis1_initial_job.children.create_future(mc_power_future_creator,'AXIS1_POWER_ON');
-		IF __QUERYPOINTER(_job_temp.future, mc_power_future) THEN
-			mc_power_future^.set_parameters(stAxis1, TRUE);		
+		IF bStart THEN
+			IF gear_in_job.init() THEN
+				basic_job.children.append_job(gear_in_job);
+				iState := 3;
+			END_IF
 		END_IF
-		
-		//axis2
-		// power on
-		_job_temp REF= _axis2_initial_job.children.create_future(mc_power_future_creator,'AXIS2_POWER_ON');
-		IF __QUERYPOINTER(_job_temp.future, mc_power_future) THEN
-			mc_power_future^.set_parameters(stAxis2, TRUE);		
-		END_IF
-		
-		IF main_job.init() THEN
-			iState := 3;
-		END_IF
-	3: // jog and wait for start
-		IF main_job.execute() THEN
+	3:
+		IF demo_job.init() THEN
+			work_number := work_number + 1;
+			demo_job.id := TO_STRING(work_number);
+			basic_job.children.append_job(demo_job);
 			iState := 4;
 		END_IF
-	
-		IF main_job.current_state = E_FutureExecutionState.wait_for_process THEN
-			main_job.start();
-		END_IF
-
 	4:
-		fbJog(Axis:=stAxis2, Position := 1,JogForward:=bJogPlus ,JogBackwards:=bJogMinus , );
-
-		IF bStart THEN
-			iState := 5;
-		END_IF
-
-	5: // Job create
-	
-		initial_parallel_job_container REF= main_job.children.create_container(ContainerType.PARALLEL, 'Initialization');
-		// create batch job container for each axis initialization jobs
-		_axis1_initial_job REF= initial_parallel_job_container.children.create_container(ContainerType.BATCH, 'AXIS_1_INIT');
-		_axis2_initial_job REF= initial_parallel_job_container.children.create_container(ContainerType.BATCH, 'AXIS_2_INIT');
-	
-		// position set to 0
-		_job_temp REF= _axis1_initial_job.children.create_future(mc_set_position_future_creator,'AXIS1_POS_INIT');
-		IF __QUERYPOINTER(_job_temp.future, mc_set_position_future) THEN
-			mc_set_position_future^.set_parameters(stAxis1, 0);
-		END_IF
-
-		_job_temp REF= _axis2_initial_job.children.create_future(mc_set_position_future_creator,'AXIS2_POS_INIT');
-		IF __QUERYPOINTER(_job_temp.future, mc_set_position_future) THEN
-			mc_set_position_future^.set_parameters(stAxis2, 0);
-		END_IF
-
-		// Gear In
-		_job_temp REF= main_job.children.create_future(mc_gear_in_future_creator,'Gear IN');
-		IF __QUERYPOINTER(_job_temp.future, mc_gear_in_future) THEN
-			mc_gear_in_future^.set_parameters(stAxis1, stAxis2);
-		END_IF
-		
-		iState := 6;
-
-	6:
-		IF main_job.execute() THEN
-			iState := 7;
-		END_IF
-	
-		IF main_job.current_state = E_FutureExecutionState.wait_for_process THEN
-			main_job.start();
-		END_IF
-
-	7:
-		demo_job_container REF= main_job.children.create_container(ContainerType.BATCH, 'DEMO');
-	
-		// Sequence
-		FOR i := 1 TO 10 DO
-		
-			_job_temp REF= demo_job_container.children.create_future(mc_move_rel_future_creator,CONCAT('MOVE20_', TO_STRING(i)));
-			IF __QUERYPOINTER(_job_temp.future, mc_move_rel_future) THEN
-				mc_move_rel_future^.set_parameters(stAxis1,20,200,0,0,0,0);
+		IF demo_job.done THEN
+			IF bStart THEN
+				iState := 3;
+			ELSE
+				iState := 1;
 			END_IF
-		
-			_job_temp REF= demo_job_container.children.create_future(sleep_creator,CONCAT('WAIT_100MS_', TO_STRING(i)));
-			IF __QUERYPOINTER(_job_temp.future, sleep) THEN
-				sleep^.sleep_time := T#100MS;
-			END_IF
-			
-		END_FOR
-		
-		// position set to 0
-
-		_job_temp REF= demo_job_container.children.create_future(mc_move_abs_future_creator,CONCAT('MOVE20_', TO_STRING(i)));
-		IF __QUERYPOINTER(_job_temp.future, mc_move_abs_future) THEN
-			mc_move_abs_future^.set_parameters(stAxis1,0,200,0,0,0,0);
 		END_IF
-		
-		FOR i := 1 TO 10 DO
-		
-			_job_temp REF= demo_job_container.children.create_future(mc_move_rel_future_creator,CONCAT('MOVE-20_', TO_STRING(i)));
-			IF __QUERYPOINTER(_job_temp.future, mc_move_rel_future) THEN
-				mc_move_rel_future^.set_parameters(stAxis1,-20,200,0,0,0,0);
-			END_IF
-		
-			_job_temp REF= demo_job_container.children.create_future(sleep_creator,CONCAT('WAIT_100MS_', TO_STRING(i)));
-			IF __QUERYPOINTER(_job_temp.future, sleep) THEN
-				sleep^.sleep_time := T#100MS;
-			END_IF
-			
-		END_FOR
-		
-		// position to 0
-
-		_job_temp REF= demo_job_container.children.create_future(mc_move_abs_future_creator,'MOVE_HOME');
-		IF __QUERYPOINTER(_job_temp.future, mc_move_abs_future) THEN
-			mc_move_abs_future^.set_parameters(stAxis1,0,200,0,0,0,0);
-		END_IF
-
-		_job_temp REF= demo_job_container.children.create_future(sleep_creator,'WAIT_100MS');
-		IF __QUERYPOINTER(_job_temp.future, sleep) THEN
-			sleep^.sleep_time := T#100MS;
-		END_IF
-		
-		// 1000deg/s -> 500deg/s
-		
-		_job_temp REF= demo_job_container.children.create_future(mc_move_velocity_future_creator,'VELO-1000');
-		IF __QUERYPOINTER(_job_temp.future, mc_move_velocity_future) THEN
-			mc_move_velocity_future^.set_parameters(stAxis1,MC_Direction.MC_Positive_Direction,1000,0,0,0,0);
-		END_IF
-
-		_job_temp REF= demo_job_container.children.create_future(sleep_creator,'WAIT_5S');
-		IF __QUERYPOINTER(_job_temp.future, sleep) THEN
-			sleep^.sleep_time := T#5S;
-		END_IF
-
-		_job_temp REF= demo_job_container.children.create_future(mc_move_velocity_future_creator,'VELO-500');
-		IF __QUERYPOINTER(_job_temp.future, mc_move_velocity_future) THEN
-			mc_move_velocity_future^.set_parameters(stAxis1,MC_Direction.MC_Positive_Direction,500,0,0,0,0);
-		END_IF
-	
-		_job_temp REF= demo_job_container.children.create_future(sleep_creator,'WAIT_5S');
-		IF __QUERYPOINTER(_job_temp.future, sleep) THEN
-			sleep^.sleep_time := T#5S;
-		END_IF
-
-		_job_temp REF= demo_job_container.children.create_future(mc_stop_future_creator,'STOP');
-		IF __QUERYPOINTER(_job_temp.future, mc_stop_future) THEN
-			mc_stop_future^.set_parameters(stAxis1,0,0);
-		END_IF
-		
-		// position to 0
-
-		_job_temp REF= demo_job_container.children.create_future(mc_move_abs_future_creator,'MOVE_HOME');
-		IF __QUERYPOINTER(_job_temp.future, mc_move_abs_future) THEN
-			mc_move_abs_future^.set_parameters(stAxis1,0,200,0,0,0,0);
-		END_IF
-				
-		(*
-		// Gear Out
-		_job_temp REF= demo_job_container.children.create_future(mc_gear_out_future_creator,'Gear OUT');
-		IF __QUERYPOINTER(_job_temp.future, mc_gear_out_future) THEN
-			mc_gear_out_future^.set_parameters(stAxis2);
-		END_IF
-		
-		
-		_job_temp REF= demo_job_container.children.create_future(mc_set_position_future_creator,'AXIS1_POS_INIT');
-		IF __QUERYPOINTER(_job_temp.future, mc_set_position_future) THEN
-			mc_set_position_future^.set_parameters(stAxis1, 0);
-		END_IF
-		
-		_job_temp REF= demo_job_container.children.create_future(mc_set_position_future_creator,'AXIS2_POS_INIT');
-		IF __QUERYPOINTER(_job_temp.future, mc_set_position_future) THEN
-			mc_set_position_future^.set_parameters(stAxis2, 0);
-		END_IF
-		
-		// Gear In
-		_job_temp REF= demo_job_container.children.create_future(mc_gear_in_future_creator,'Gear IN');
-		IF __QUERYPOINTER(_job_temp.future, mc_gear_in_future) THEN
-			mc_gear_in_future^.set_parameters(stAxis1, stAxis2);
-		END_IF
-		*)
-		
-		iState := 8;
-
-	8:
-		IF main_job.execute() AND main_job.nErrorID = 0 THEN
-			iState := 9;
-		END_IF
-	
-		//IF main_job.current_state = E_FutureExecutionState.wait_for_process THEN
-		//	main_job.start();
-		//END_IF
-		
-		IF NOT bStart THEN
-			main_job.abort();
-		ELSE
-			main_job.start();
-		END_IF
-		
-	9:
-		main_job.init();
-		IF bStart THEN
-			iState := 7;
-		END_IF
-	
 END_CASE
+
+
+IF bPower THEN
+	job_reset := TRUE;
+ELSE
+	IF job_reset AND basic_job.reset(FALSE) THEN
+		iState := 0;
+		job_reset := FALSE;
+	END_IF
+END_IF
+
+basic_job.execute();
+
+bError := basic_job.nErrorID <> 0;
+
+IF bReset THEN
+	IF basic_job.error_reset() THEN
+		IF basic_job.resume() THEN
+			bReset := FALSE;
+		END_IF
+	END_IF 
+END_IF
+
+IF basic_job.ready THEN
+	basic_job.start();
+END_IF
 
 (*
 
@@ -567,135 +382,275 @@ END_CASE
 
 *)]]></ST>
     </Implementation>
+    <Method Name="Execution" Id="{d52dbacd-3d99-403b-bb01-e4478be4b44b}">
+      <Declaration><![CDATA[METHOD Execution : BOOL
+VAR_INPUT
+	main_job : REFERENCE TO FB_Executor;
+	bStart : BOOL := TRUE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Execution := main_job.execute();
+
+IF main_job.ready THEN
+	main_job.start();
+END_IF
+
+IF bStart THEN
+	main_job.start();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="JobCreate_GearIn" Id="{fcc86729-849d-4b88-bffd-35052ffdfb89}">
+      <Declaration><![CDATA[METHOD JobCreate_GearIn : BOOL
+VAR_INPUT
+	job : REFERENCE TO FB_Executor;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Gear In
+mc_gear_in_future_creator.set_parameters(stAxis1, stAxis2);
+job.create_future(mc_gear_in_future_creator,'Gear IN');
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="JobCreate_PosInit" Id="{8ecc2f01-c3e3-4110-a58b-a3226565c5d4}">
+      <Declaration><![CDATA[METHOD JobCreate_PosInit : BOOL
+VAR_INPUT
+	job : REFERENCE TO FB_Executor;
+END_VAR
+VAR
+	_job_temp	: REFERENCE TO FB_Executor; // reference to job object for working.
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[job.create_container(ContainerType.PARALLEL, 'INIT_POS');
+// position set to 0
+mc_set_position_future_creator.set_parameters(stAxis1, 0);
+_job_temp REF= job.children.create_job(mc_set_position_future_creator,'AXIS1_POS_INIT');
+
+mc_set_position_future_creator.set_parameters(stAxis2, 0);
+_job_temp REF= job.children.create_job(mc_set_position_future_creator,'AXIS2_POS_INIT');
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="JobCreateDemo" Id="{c6c18e30-8bba-4c6d-806d-02b28dd2a277}">
+      <Declaration><![CDATA[METHOD JobCreateDemo : BOOL
+VAR_INPUT
+	base_job : REFERENCE TO FB_Executor;
+END_VAR
+VAR
+	_job_temp : REFERENCE TO FB_Executor;
+	sleep : POINTER TO FutureSleep;
+	sleep_creator : FutureSleepCreator;
+
+	mc_move_rel_future : POINTER TO FutureMCMoveRelative;
+	mc_move_rel_future_creator : FutureMCMoveRelativeCreator;
+
+	mc_move_abs_future : POINTER TO FutureMCMoveAbsolute;
+	mc_move_abs_future_creator : FutureMCMoveAbsoluteCreator;
+
+	mc_move_velocity_future: POINTER TO FutureMCMoveVelocity;
+	mc_move_velocity_future_creator: FutureMCMoveVelocityCreator;
+
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[base_job.create_container(ContainerTYpe.BATCH, 'DEMO_JOB');
+// Sequence
+FOR i := 1 TO 10 DO
+
+	mc_move_rel_future_creator.set_parameters(stAxis1,20,200,0,0,0,0);
+	_job_temp REF= base_job.children.create_job(mc_move_rel_future_creator,CONCAT('MOVE20_', TO_STRING(i)));
+
+	sleep_creator.sleep_time := T#100MS;
+	_job_temp REF= base_job.children.create_job(sleep_creator,CONCAT('WAIT_100MS_', TO_STRING(i)));
+	
+END_FOR
+
+// position set to 0
+
+mc_move_abs_future_creator.set_parameters(stAxis1,0,200,0,0,0,0);
+_job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,CONCAT('MOVE20_', TO_STRING(i)));
+
+FOR i := 1 TO 10 DO
+
+	mc_move_rel_future_creator.set_parameters(stAxis1,-20,200,0,0,0,0);
+	_job_temp REF= base_job.children.create_job(mc_move_rel_future_creator,CONCAT('MOVE-20_', TO_STRING(i)));
+
+	sleep_creator.sleep_time := T#100MS;
+	_job_temp REF= base_job.children.create_job(sleep_creator,CONCAT('WAIT_100MS_', TO_STRING(i)));
+	
+END_FOR
+
+// position to 0
+
+mc_move_abs_future_creator.set_parameters(stAxis1,0,200,0,0,0,0);
+_job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'MOVE_HOME');
+
+sleep_creator.sleep_time := T#100MS;
+_job_temp REF= base_job.children.create_job(sleep_creator,'WAIT_100MS');
+
+// 1000deg/s -> 500deg/s
+
+mc_move_velocity_future_creator.set_parameters(stAxis1,MC_Direction.MC_Positive_Direction,1000,0,0,0,0);
+_job_temp REF= base_job.children.create_job(mc_move_velocity_future_creator,'VELO-1000');
+
+sleep_creator.sleep_time := T#5S;
+_job_temp REF= base_job.children.create_job(sleep_creator,'WAIT_5S');
+
+mc_move_velocity_future_creator.set_parameters(stAxis1,MC_Direction.MC_Positive_Direction,500,0,0,0,0);
+_job_temp REF= base_job.children.create_job(mc_move_velocity_future_creator,'VELO-500');
+
+sleep_creator.sleep_time := T#5S;
+_job_temp REF= base_job.children.create_job(sleep_creator,'WAIT_5S');
+
+mc_stop_future_creator.set_parameters(stAxis1,0,0);
+_job_temp REF= base_job.children.create_job(mc_stop_future_creator,'STOP');
+
+// position to 0
+
+mc_move_abs_future_creator.set_parameters(stAxis1,0,1000,0,0,0,0);
+_job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'MOVE_HOME');
+]]></ST>
+      </Implementation>
+    </Method>
     <LineIds Name="MAIN">
-      <LineId Id="2987" Count="0" />
-      <LineId Id="2989" Count="0" />
-      <LineId Id="2992" Count="0" />
-      <LineId Id="3017" Count="0" />
-      <LineId Id="3012" Count="0" />
-      <LineId Id="3015" Count="1" />
-      <LineId Id="3013" Count="1" />
-      <LineId Id="2991" Count="0" />
-      <LineId Id="2990" Count="0" />
-      <LineId Id="2988" Count="0" />
-      <LineId Id="2003" Count="0" />
-      <LineId Id="2429" Count="1" />
-      <LineId Id="2004" Count="0" />
-      <LineId Id="2006" Count="0" />
-      <LineId Id="2957" Count="1" />
-      <LineId Id="2994" Count="0" />
-      <LineId Id="2970" Count="0" />
-      <LineId Id="2995" Count="0" />
-      <LineId Id="2998" Count="2" />
-      <LineId Id="2997" Count="0" />
-      <LineId Id="2974" Count="0" />
-      <LineId Id="3001" Count="0" />
-      <LineId Id="2975" Count="2" />
-      <LineId Id="3002" Count="0" />
-      <LineId Id="3005" Count="0" />
-      <LineId Id="2961" Count="0" />
-      <LineId Id="2959" Count="0" />
-      <LineId Id="2978" Count="0" />
-      <LineId Id="2980" Count="0" />
-      <LineId Id="3022" Count="0" />
-      <LineId Id="3003" Count="1" />
-      <LineId Id="2983" Count="2" />
-      <LineId Id="2979" Count="0" />
-      <LineId Id="2956" Count="0" />
-      <LineId Id="2007" Count="1" />
-      <LineId Id="2400" Count="1" />
-      <LineId Id="3018" Count="0" />
-      <LineId Id="3021" Count="0" />
-      <LineId Id="3020" Count="0" />
-      <LineId Id="2398" Count="1" />
-      <LineId Id="2009" Count="0" />
-      <LineId Id="2963" Count="0" />
-      <LineId Id="2014" Count="11" />
-      <LineId Id="2032" Count="6" />
-      <LineId Id="2917" Count="0" />
-      <LineId Id="2919" Count="2" />
-      <LineId Id="2913" Count="0" />
-      <LineId Id="2928" Count="6" />
-      <LineId Id="2927" Count="0" />
-      <LineId Id="2947" Count="0" />
-      <LineId Id="2955" Count="0" />
-      <LineId Id="2954" Count="0" />
-      <LineId Id="2948" Count="2" />
-      <LineId Id="2935" Count="0" />
-      <LineId Id="2039" Count="0" />
-      <LineId Id="2936" Count="1" />
-      <LineId Id="2952" Count="1" />
-      <LineId Id="2951" Count="0" />
-      <LineId Id="2916" Count="0" />
-      <LineId Id="3008" Count="3" />
-      <LineId Id="3006" Count="1" />
-      <LineId Id="2041" Count="3" />
-      <LineId Id="2419" Count="0" />
-      <LineId Id="2414" Count="0" />
-      <LineId Id="2411" Count="2" />
-      <LineId Id="2409" Count="0" />
-      <LineId Id="2052" Count="0" />
-      <LineId Id="2054" Count="0" />
-      <LineId Id="2938" Count="0" />
-      <LineId Id="2056" Count="0" />
-      <LineId Id="2940" Count="6" />
-      <LineId Id="2939" Count="0" />
-      <LineId Id="2383" Count="0" />
-      <LineId Id="2418" Count="0" />
-      <LineId Id="2384" Count="0" />
-      <LineId Id="2362" Count="0" />
-      <LineId Id="2510" Count="0" />
-      <LineId Id="2512" Count="0" />
-      <LineId Id="2369" Count="3" />
-      <LineId Id="2513" Count="0" />
-      <LineId Id="2521" Count="2" />
-      <LineId Id="2519" Count="1" />
-      <LineId Id="2514" Count="0" />
-      <LineId Id="2536" Count="0" />
-      <LineId Id="2531" Count="0" />
-      <LineId Id="2644" Count="0" />
-      <LineId Id="2646" Count="3" />
-      <LineId Id="2734" Count="0" />
-      <LineId Id="2756" Count="19" />
-      <LineId Id="2873" Count="0" />
-      <LineId Id="2875" Count="3" />
-      <LineId Id="2755" Count="0" />
-      <LineId Id="2872" Count="0" />
-      <LineId Id="2645" Count="0" />
-      <LineId Id="2864" Count="3" />
-      <LineId Id="2886" Count="0" />
-      <LineId Id="2888" Count="3" />
-      <LineId Id="2887" Count="0" />
-      <LineId Id="2892" Count="3" />
-      <LineId Id="2868" Count="3" />
-      <LineId Id="2860" Count="0" />
-      <LineId Id="2899" Count="4" />
-      <LineId Id="2861" Count="0" />
-      <LineId Id="2904" Count="5" />
-      <LineId Id="2862" Count="0" />
-      <LineId Id="2544" Count="0" />
-      <LineId Id="2558" Count="3" />
-      <LineId Id="2548" Count="0" />
-      <LineId Id="2542" Count="1" />
-      <LineId Id="2532" Count="3" />
-      <LineId Id="2406" Count="0" />
-      <LineId Id="2539" Count="2" />
-      <LineId Id="2537" Count="0" />
-      <LineId Id="2552" Count="0" />
-      <LineId Id="2554" Count="3" />
-      <LineId Id="2553" Count="0" />
-      <LineId Id="2643" Count="0" />
-      <LineId Id="2538" Count="0" />
-      <LineId Id="2405" Count="0" />
-      <LineId Id="2058" Count="8" />
-      <LineId Id="2421" Count="2" />
-      <LineId Id="2427" Count="1" />
-      <LineId Id="2424" Count="0" />
-      <LineId Id="2067" Count="2" />
-      <LineId Id="2526" Count="2" />
-      <LineId Id="2072" Count="1" />
-      <LineId Id="2077" Count="199" />
+      <LineId Id="7433" Count="0" />
+      <LineId Id="7422" Count="0" />
+      <LineId Id="7427" Count="0" />
+      <LineId Id="7423" Count="0" />
+      <LineId Id="7499" Count="1" />
+      <LineId Id="7439" Count="0" />
+      <LineId Id="7438" Count="0" />
+      <LineId Id="7442" Count="0" />
+      <LineId Id="7496" Count="0" />
+      <LineId Id="7436" Count="1" />
+      <LineId Id="7424" Count="0" />
+      <LineId Id="6897" Count="0" />
+      <LineId Id="7628" Count="0" />
+      <LineId Id="6899" Count="0" />
+      <LineId Id="7689" Count="0" />
+      <LineId Id="6900" Count="2" />
+      <LineId Id="7157" Count="0" />
+      <LineId Id="7626" Count="1" />
+      <LineId Id="7327" Count="0" />
+      <LineId Id="7300" Count="0" />
+      <LineId Id="7296" Count="0" />
+      <LineId Id="7326" Count="0" />
+      <LineId Id="7301" Count="1" />
+      <LineId Id="7295" Count="0" />
+      <LineId Id="6903" Count="1" />
+      <LineId Id="6921" Count="0" />
+      <LineId Id="7161" Count="0" />
+      <LineId Id="7165" Count="1" />
+      <LineId Id="7328" Count="0" />
+      <LineId Id="6925" Count="5" />
+      <LineId Id="7329" Count="0" />
+      <LineId Id="6931" Count="3" />
+      <LineId Id="7820" Count="0" />
+      <LineId Id="7823" Count="0" />
+      <LineId Id="7829" Count="0" />
+      <LineId Id="7822" Count="0" />
+      <LineId Id="6935" Count="0" />
+      <LineId Id="7828" Count="0" />
+      <LineId Id="7825" Count="2" />
+      <LineId Id="6937" Count="1" />
+      <LineId Id="7277" Count="0" />
+      <LineId Id="7317" Count="0" />
+      <LineId Id="7320" Count="1" />
+      <LineId Id="7319" Count="0" />
+      <LineId Id="7283" Count="2" />
+      <LineId Id="7312" Count="0" />
+      <LineId Id="7315" Count="1" />
+      <LineId Id="7314" Count="0" />
+      <LineId Id="7291" Count="0" />
+      <LineId Id="7168" Count="0" />
+      <LineId Id="6940" Count="0" />
+      <LineId Id="7307" Count="0" />
+      <LineId Id="7310" Count="0" />
+      <LineId Id="7332" Count="0" />
+      <LineId Id="7309" Count="0" />
+      <LineId Id="6943" Count="0" />
+      <LineId Id="7333" Count="0" />
+      <LineId Id="7335" Count="0" />
+      <LineId Id="7556" Count="1" />
+      <LineId Id="7336" Count="1" />
+      <LineId Id="7334" Count="0" />
+      <LineId Id="6948" Count="1" />
+      <LineId Id="7338" Count="0" />
+      <LineId Id="7341" Count="1" />
+      <LineId Id="7339" Count="1" />
+      <LineId Id="6955" Count="1" />
+      <LineId Id="7802" Count="2" />
+      <LineId Id="7836" Count="0" />
+      <LineId Id="7835" Count="0" />
+      <LineId Id="7831" Count="0" />
+      <LineId Id="7837" Count="0" />
+      <LineId Id="7833" Count="1" />
+      <LineId Id="7832" Count="0" />
+      <LineId Id="7805" Count="14" />
+      <LineId Id="7801" Count="0" />
+      <LineId Id="6957" Count="199" />
       <LineId Id="1144" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.Execution">
+      <LineId Id="6" Count="3" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="15" Count="1" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="14" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.JobCreate_GearIn">
+      <LineId Id="23" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.JobCreate_PosInit">
+      <LineId Id="11" Count="1" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="17" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.JobCreateDemo">
+      <LineId Id="341" Count="0" />
+      <LineId Id="243" Count="1" />
+      <LineId Id="360" Count="0" />
+      <LineId Id="245" Count="1" />
+      <LineId Id="361" Count="0" />
+      <LineId Id="250" Count="1" />
+      <LineId Id="255" Count="3" />
+      <LineId Id="362" Count="0" />
+      <LineId Id="259" Count="1" />
+      <LineId Id="264" Count="1" />
+      <LineId Id="363" Count="0" />
+      <LineId Id="266" Count="1" />
+      <LineId Id="364" Count="0" />
+      <LineId Id="271" Count="1" />
+      <LineId Id="276" Count="3" />
+      <LineId Id="365" Count="0" />
+      <LineId Id="280" Count="1" />
+      <LineId Id="366" Count="0" />
+      <LineId Id="285" Count="1" />
+      <LineId Id="290" Count="1" />
+      <LineId Id="367" Count="0" />
+      <LineId Id="292" Count="1" />
+      <LineId Id="297" Count="0" />
+      <LineId Id="368" Count="0" />
+      <LineId Id="298" Count="0" />
+      <LineId Id="369" Count="0" />
+      <LineId Id="302" Count="1" />
+      <LineId Id="370" Count="0" />
+      <LineId Id="307" Count="1" />
+      <LineId Id="371" Count="0" />
+      <LineId Id="312" Count="1" />
+      <LineId Id="317" Count="1" />
+      <LineId Id="372" Count="0" />
+      <LineId Id="319" Count="1" />
+      <LineId Id="5" Count="0" />
     </LineIds>
   </POU>
 </TcPlcObject>

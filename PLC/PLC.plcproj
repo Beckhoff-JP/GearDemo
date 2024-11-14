@@ -18,6 +18,9 @@
     <LibraryReferences>{ed17c771-868f-43d4-8651-ed852a42aa35}</LibraryReferences>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="DUTs\JobEventReport.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="GlobalTextList.TcGTLO">
       <SubType>Code</SubType>
     </Compile>
@@ -37,6 +40,12 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\activities\FutureMCGearOut.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\activities\FutureMCInching.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\activities\FutureMCInchingCreator.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\activities\FutureMCResetCreator.TcPOU">
@@ -117,7 +126,6 @@
   <ItemGroup>
     <PlaceholderReference Include="JobManagementFramework">
       <DefaultResolution>JobManagementFramework, * (Bekchoff Automation K.K.)</DefaultResolution>
-      <Namespace>jobmgmt</Namespace>
     </PlaceholderReference>
     <PlaceholderReference Include="System_VisuElemMeter">
       <DefaultResolution>VisuElemMeter, 3.5.13.0 (System)</DefaultResolution>
@@ -160,6 +168,10 @@
       <Namespace>VisuNativeControl</Namespace>
       <SystemLibrary>true</SystemLibrary>
       <ResolverGuid>2717eb6a-dd07-4c66-8d8d-cacebd7b18ae</ResolverGuid>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Tc2_EtherCAT">
+      <DefaultResolution>Tc2_EtherCAT, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_EtherCAT</Namespace>
     </PlaceholderReference>
     <PlaceholderReference Include="Tc2_MC2">
       <DefaultResolution>Tc2_MC2, * (Beckhoff Automation GmbH)</DefaultResolution>

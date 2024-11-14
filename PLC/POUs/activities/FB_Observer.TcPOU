@@ -5,6 +5,7 @@
 VAR_INPUT
 END_VAR
 VAR_OUTPUT
+	job_event_report : JobEventReport;
 END_VAR
 VAR
 END_VAR
@@ -13,8 +14,7 @@ END_VAR
       <ST><![CDATA[]]></ST>
     </Implementation>
     <Method Name="subscribe_job_directory" Id="{9fadc14a-702e-4d4c-9c8d-d3d1919e5052}">
-      <Declaration><![CDATA[{warning 'add method implementation '}
-METHOD subscribe_job_directory : BOOL
+      <Declaration><![CDATA[METHOD subscribe_job_directory : BOOL
 VAR_INPUT
 	(* Represent reference to subscribed job object*)
 	executor	: REFERENCE TO jobmgmt.FB_Executor;
@@ -24,23 +24,25 @@ VAR
 END_VAR
 ]]></Declaration>
       <Implementation>
-        <ST><![CDATA[
-job_log := CONCAT(job_log, 'JOB STRUCTURE');
+        <ST><![CDATA[job_log := CONCAT(job_log, 'JOB STRUCTURE');
 IF executor.future <> 0 THEN
-	job_log := CONCAT(job_log, '/ FUTURE_NAME : ');
+	job_log := CONCAT(job_log, '/ FUTURE_NAME :');
 	job_log := CONCAT(job_log, executor.future.future_name);
-	job_log := CONCAT(job_log, ', ');	
+	job_log := CONCAT(job_log, ',');
 END_IF
-job_log := CONCAT(job_log, 'JOB_ID : ');
-job_log := CONCAT(job_log, executor.id);
+
+job_log := CONCAT(job_log, 'JOB_ID');
+job_log := CONCAT(job_log, ' : ');
+job_log := CONCAT(job_log, executor.uid);
 
 ADSLOGSTR(msgCtrlMask := ADSLOG_MSGTYPE_LOG, msgFmtStr := job_log, strArg := '');]]></ST>
       </Implementation>
     </Method>
     <Method Name="subscribe_job_event" Id="{4ef31f8a-7d23-4675-adf8-d567da162687}">
-      <Declaration><![CDATA[{warning 'add method implementation '}
-METHOD subscribe_job_event : BOOL
+      <Declaration><![CDATA[METHOD subscribe_job_event : BOOL
 VAR_INPUT
+	(* Subject of event*)
+	subject	: T_MaxString;
 	(* Job state before transition.*)
 	old_state	: jobmgmt.E_FutureExecutionState;
 	(* Job state after transition.*)
@@ -56,22 +58,30 @@ END_VAR
 VAR
 	last_state : STRING;
 	current_state : STRING;
-	text : STRING;
+	text : T_MaxString;
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[last_state := TO_STRING(old_state);
-current_state := TO_STRING(new_state);
+current_state := TO_STRING(executor.future.state);
+
+job_event_report.subject := subject;
+job_event_report.old_state := TO_STRING(old_state);
+job_event_report.new_state := TO_STRING(new_state);
+job_event_report.record_time := record_time;
+job_event_report.job_id := executor.uid;
 
 fb_timezone_info();
 text := FILETIME64_TO_ISO8601(fileTime := record_time, nBias := DINT_TO_INT(fb_timezone_info.tzInfo.bias), bUTC := TRUE,nPrecision := 6);
 text := CONCAT(text, '	');
+text := CONCAT(text, subject);
+text := CONCAT(text, '	');
 text := CONCAT(text, current_state);
 text := CONCAT(text, '	');
 text := CONCAT(text, TO_STRING(executor.nErrorID));
-text := CONCAT(text, '			');
+text := CONCAT(text, '	');
 text := CONCAT(text, executor.future.future_name);
-text := CONCAT(text, '		');
-text := CONCAT(text, executor.id);
+text := CONCAT(text, '	');
+text := CONCAT(text, executor.uid);
 
 
 ADSLOGSTR(msgCtrlMask := ADSLOG_MSGTYPE_LOG, msgFmtStr := text, strArg := '');
@@ -83,11 +93,17 @@ subscribe_job_event := TRUE;]]></ST>
       <LineId Id="9" Count="0" />
     </LineIds>
     <LineIds Name="FB_Observer.subscribe_job_directory">
-      <LineId Id="9" Count="9" />
+      <LineId Id="38" Count="7" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="46" Count="1" />
       <LineId Id="8" Count="0" />
     </LineIds>
     <LineIds Name="FB_Observer.subscribe_job_event">
-      <LineId Id="34" Count="6" />
+      <LineId Id="34" Count="1" />
+      <LineId Id="120" Count="5" />
+      <LineId Id="36" Count="3" />
+      <LineId Id="93" Count="1" />
+      <LineId Id="40" Count="0" />
       <LineId Id="71" Count="0" />
       <LineId Id="70" Count="0" />
       <LineId Id="41" Count="7" />

@@ -9,11 +9,11 @@ VAR_OUTPUT
 END_VAR
 VAR
 	_axis: REFERENCE TO AXIS_REF;
-	_enable : BOOL;
 	_override: LREAL := 100.0;
 	_enable_positive:	BOOL := TRUE; 
 	_enable_negative:	BOOL := TRUE;
 	_fb_power	: MC_Power;
+	_mc_reset	: MC_Reset;
 	_option : ST_PowerOptions;
 	_buffer_mode : MC_BufferMode;
 	_error_id :UDINT;
@@ -26,27 +26,61 @@ END_VAR
       <Declaration><![CDATA[METHOD abort : BOOL // Return TRUE if finish.
 ]]></Declaration>
       <Implementation>
-        <ST><![CDATA[]]></ST>
+        <ST><![CDATA[_fb_power(
+	Axis:= _axis, 
+	Enable:= FALSE, 
+	Enable_Positive:= FALSE, 
+	Enable_Negative:= FALSE, 
+	Override:= _override, 
+	BufferMode:= _buffer_mode, 
+	Options:= _option, 
+);	
+
+abort := NOT _fb_power.Status;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="error_reset" Id="{fbfcfc82-515e-4f7c-ae99-279462150b8a}">
+      <Declaration><![CDATA[METHOD error_reset : BOOL // Must be overrided if future has any errors.
+VAR_INST
+	_exec_state : UDINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _error_id <> 0 THEN
+	CASE _exec_state OF
+		0:
+			_mc_reset(Axis := _axis, Execute := FALSE);
+			_mc_reset(Axis:= _axis, Execute := TRUE );
+			_exec_state := 1;
+		1:
+			IF _mc_reset.Busy THEN
+				_mc_reset(Axis:= _axis,Execute := FALSE);
+			END_IF
+	END_CASE
+	
+	_error_id := _mc_reset.ErrorID;
+	error_reset := _mc_reset.Done;
+ELSE
+	error_reset := TRUE;
+END_IF]]></ST>
       </Implementation>
     </Method>
     <Method Name="execute" Id="{f127afa9-edb6-44ee-8a9c-b074dfb931e5}">
       <Declaration><![CDATA[METHOD execute : BOOL // Return TRUE if finish.
 ]]></Declaration>
       <Implementation>
-        <ST><![CDATA[IF (NOT _fb_power.Busy AND _enable) OR (_fb_power.Busy AND NOT _enable)  THEN
-	_fb_power(
-		Axis:= _axis, 
-		Enable:= _enable, 
-		Enable_Positive:= _enable_positive, 
-		Enable_Negative:= _enable_negative, 
-		Override:= _override, 
-		BufferMode:= _buffer_mode, 
-		Options:= _option, 
-	);
-END_IF
+        <ST><![CDATA[
+_fb_power(
+	Axis:= _axis, 
+	Enable:= TRUE, 
+	Enable_Positive:= _enable_positive, 
+	Enable_Negative:= _enable_negative, 
+	Override:= _override, 
+	BufferMode:= _buffer_mode, 
+	Options:= _option, 
+);
 
 _error_id := _fb_power.ErrorID;
-execute := (NOT _enable AND NOT _fb_power.Busy) OR (_enable AND _fb_power.Busy);
+execute := NOT _fb_Power.Status;
 ]]></ST>
       </Implementation>
     </Method>
@@ -92,13 +126,10 @@ _option := option;
       <Declaration><![CDATA[METHOD set_parameters : BOOL
 VAR_INPUT
 	axis : REFERENCE TO AXIS_REF;
-	enable: BOOL;
 END_VAR
 ]]></Declaration>
       <Implementation>
         <ST><![CDATA[_axis REF= axis;
-_enable := enable;
-
 ]]></ST>
       </Implementation>
     </Method>
@@ -106,13 +137,20 @@ _enable := enable;
       <LineId Id="9" Count="0" />
     </LineIds>
     <LineIds Name="FutureMCPower.abort">
+      <LineId Id="5" Count="9" />
       <LineId Id="3" Count="0" />
     </LineIds>
+    <LineIds Name="FutureMCPower.error_reset">
+      <LineId Id="4" Count="12" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="17" Count="2" />
+    </LineIds>
     <LineIds Name="FutureMCPower.execute">
-      <LineId Id="80" Count="0" />
-      <LineId Id="60" Count="7" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="105" Count="5" />
+      <LineId Id="67" Count="0" />
       <LineId Id="83" Count="0" />
-      <LineId Id="94" Count="0" />
       <LineId Id="96" Count="0" />
       <LineId Id="100" Count="0" />
       <LineId Id="98" Count="0" />
@@ -132,8 +170,6 @@ _enable := enable;
       <LineId Id="11" Count="0" />
     </LineIds>
     <LineIds Name="FutureMCPower.set_parameters">
-      <LineId Id="26" Count="0" />
-      <LineId Id="29" Count="0" />
       <LineId Id="27" Count="0" />
       <LineId Id="17" Count="0" />
     </LineIds>
