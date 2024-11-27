@@ -21,6 +21,7 @@ VAR
 	_mode : E_JogMode ;
 	_error_id :UDINT;
 	_reset_state : UINT;
+	step : UINT;
 END_VAR
 ]]></Declaration>
     <Implementation>
@@ -81,20 +82,30 @@ END_IF]]></ST>
       <Declaration><![CDATA[METHOD execute : BOOL // Return TRUE if finish.
 ]]></Declaration>
       <Implementation>
-        <ST><![CDATA[_mc_jog(
-	JogForward := _direction,
-	JogBackwards := NOT _direction,
-	Axis := _axis,
-	Position := _position,
-	Velocity := _velocity,
-	Acceleration := _acceleration,
-	Deceleration := _deceleration,
-	Jerk := _jerk,
-	Mode := E_JogMode.MC_JOGMODE_INCHING
-);
+        <ST><![CDATA[CASE step OF
+	0:
+		_mc_jog(
+			JogForward := _direction,
+			JogBackwards := NOT _direction,
+			Axis := _axis,
+			Position := _position,
+			Velocity := _velocity,
+			Acceleration := _acceleration,
+			Deceleration := _deceleration,
+			Jerk := _jerk,
+			Mode := E_JogMode.MC_JOGMODE_INCHING
+		);
+		IF _mc_jog.Done OR _mc_jog.Error THEN
+			step := 1;
+		END_IF
 
-_error_id := _mc_jog.ErrorID;
-execute := _mc_jog.Done OR _mc_jog.Error;]]></ST>
+	1:
+		_mc_jog(JogForward := FALSE, JogBackwards := FALSE, Axis := _axis);
+		execute := TRUE;
+		_error_id := _mc_jog.ErrorID;		
+END_CASE
+
+]]></ST>
       </Implementation>
     </Method>
     <Method Name="init" Id="{631c5c17-d70c-4519-a09b-d32b82adcea0}">
@@ -106,6 +117,7 @@ END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[_reset_state := 0;
 _error_id := _mc_jog.ErrorID;
+step := 0;
 init := TRUE;]]></ST>
       </Implementation>
     </Method>
@@ -189,22 +201,25 @@ _velocity := velocity;
       <LineId Id="17" Count="2" />
     </LineIds>
     <LineIds Name="FutureMCInching.execute">
-      <LineId Id="123" Count="0" />
-      <LineId Id="127" Count="0" />
-      <LineId Id="156" Count="0" />
-      <LineId Id="147" Count="0" />
-      <LineId Id="150" Count="1" />
-      <LineId Id="143" Count="1" />
-      <LineId Id="126" Count="0" />
-      <LineId Id="155" Count="0" />
-      <LineId Id="125" Count="0" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="165" Count="10" />
+      <LineId Id="183" Count="0" />
+      <LineId Id="185" Count="0" />
+      <LineId Id="184" Count="0" />
+      <LineId Id="180" Count="0" />
+      <LineId Id="176" Count="0" />
+      <LineId Id="188" Count="0" />
+      <LineId Id="186" Count="0" />
+      <LineId Id="178" Count="0" />
+      <LineId Id="162" Count="0" />
       <LineId Id="139" Count="0" />
-      <LineId Id="138" Count="0" />
       <LineId Id="3" Count="0" />
     </LineIds>
     <LineIds Name="FutureMCInching.init">
       <LineId Id="6" Count="0" />
       <LineId Id="10" Count="0" />
+      <LineId Id="15" Count="0" />
       <LineId Id="4" Count="0" />
     </LineIds>
     <LineIds Name="FutureMCInching.nErrorID.Get">

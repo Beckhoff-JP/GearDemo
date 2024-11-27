@@ -13,14 +13,14 @@ VAR
 	_enable_negative:	BOOL := TRUE;
 	_option : ST_PowerOptions;
 	_buffer_mode : MC_BufferMode;
+	_status : BOOL;
 END_VAR
 ]]></Declaration>
     <Implementation>
       <ST><![CDATA[]]></ST>
     </Implementation>
     <Method Name="create_future" Id="{a300494e-4c4b-4b5a-b968-720d096df000}">
-      <Declaration><![CDATA[{warning 'add method implementation '}
-METHOD create_future : jobmgmt.InterfaceFuture
+      <Declaration><![CDATA[METHOD create_future : jobmgmt.InterfaceFuture
 VAR_INPUT
 	(* Specify future name*)
 	future_name	: STRING;
@@ -31,14 +31,13 @@ END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[_p_future := __NEW(FutureMCPower);
 _p_future^.future_name := future_name;
-_p_future^.set_parameters(_axis);
+_p_future^.set_parameters(_axis, _status);
 _p_future^.set_options(_enable_positive, _enable_negative, _override, _buffer_mode, _option);
 create_future := _p_future^;]]></ST>
       </Implementation>
     </Method>
     <Method Name="destroy_future" Id="{9fd6631a-522f-4043-a177-993b0c9aa8fc}">
-      <Declaration><![CDATA[{warning 'add method implementation '}
-METHOD destroy_future : jobmgmt.InterfaceFuture
+      <Declaration><![CDATA[METHOD destroy_future : jobmgmt.InterfaceFuture
 VAR_INPUT
 	(* Specify future instance whtat you want to delete.*)
 	future	: jobmgmt.InterfaceFuture;
@@ -78,11 +77,12 @@ _option := option;
       <Declaration><![CDATA[METHOD set_parameters : BOOL
 VAR_INPUT
 	axis : REFERENCE TO AXIS_REF;
+	status : BOOL;
 END_VAR
 ]]></Declaration>
       <Implementation>
         <ST><![CDATA[_axis REF= axis;
-]]></ST>
+_status := status;]]></ST>
       </Implementation>
     </Method>
     <LineIds Name="FutureMCPowerCreator">

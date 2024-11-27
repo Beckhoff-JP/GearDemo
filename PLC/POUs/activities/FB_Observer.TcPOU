@@ -35,7 +35,8 @@ job_log := CONCAT(job_log, 'JOB_ID');
 job_log := CONCAT(job_log, ' : ');
 job_log := CONCAT(job_log, executor.uid);
 
-ADSLOGSTR(msgCtrlMask := ADSLOG_MSGTYPE_LOG, msgFmtStr := job_log, strArg := '');]]></ST>
+ADSLOGSTR(msgCtrlMask := ADSLOG_MSGTYPE_LOG, msgFmtStr := job_log, strArg := '');
+]]></ST>
       </Implementation>
     </Method>
     <Method Name="subscribe_job_event" Id="{4ef31f8a-7d23-4675-adf8-d567da162687}">
@@ -59,32 +60,48 @@ VAR
 	last_state : STRING;
 	current_state : STRING;
 	text : T_MaxString;
+	container : InterfaceContainer;
+	num_of_jobs : UINT;
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[last_state := TO_STRING(old_state);
-current_state := TO_STRING(executor.future.state);
+current_state := TO_STRING(new_state);
 
-job_event_report.subject := subject;
-job_event_report.old_state := TO_STRING(old_state);
-job_event_report.new_state := TO_STRING(new_state);
-job_event_report.record_time := record_time;
+IF __QUERYINTERFACE(executor.future, container) THEN
+	num_of_jobs := container.num_of_jobs;
+ELSE
+	num_of_jobs := 0;
+END_IF
+
+
+IF __ISVALIDREF(executor) THEN
+	fb_timezone_info();
+	text := FILETIME64_TO_ISO8601(fileTime := record_time, nBias := DINT_TO_INT(fb_timezone_info.tzInfo.bias), bUTC := TRUE,nPrecision := 6);
+	text := CONCAT(text, '	');
+	text := CONCAT(text, subject);
+	text := CONCAT(text, '	');
+	text := CONCAT(text, TO_STRING(current_state));
+	text := CONCAT(text, '	Err:');
+	text := CONCAT(text, TO_STRING(executor.nErrorID));
+	text := CONCAT(text, '		SubJob:');
+	text := CONCAT(text, TO_STRING(num_of_jobs));
+	text := CONCAT(text, '		Name:');
+	text := CONCAT(text, executor.future.future_name);
+	text := CONCAT(text, '		JobID:');
+	text := CONCAT(text, executor.uid);
+		
+	ADSLOGSTR(msgCtrlMask := ADSLOG_MSGTYPE_LOG,
+ 			 msgFmtStr := text, 
+			strArg := '');	
+END_IF
+
+
+job_event_report.future_name := executor.future.future_name;
 job_event_report.job_id := executor.uid;
-
-fb_timezone_info();
-text := FILETIME64_TO_ISO8601(fileTime := record_time, nBias := DINT_TO_INT(fb_timezone_info.tzInfo.bias), bUTC := TRUE,nPrecision := 6);
-text := CONCAT(text, '	');
-text := CONCAT(text, subject);
-text := CONCAT(text, '	');
-text := CONCAT(text, current_state);
-text := CONCAT(text, '	');
-text := CONCAT(text, TO_STRING(executor.nErrorID));
-text := CONCAT(text, '	');
-text := CONCAT(text, executor.future.future_name);
-text := CONCAT(text, '	');
-text := CONCAT(text, executor.uid);
-
-
-ADSLOGSTR(msgCtrlMask := ADSLOG_MSGTYPE_LOG, msgFmtStr := text, strArg := '');
+job_event_report.new_state := TO_STRING(new_state);
+job_event_report.old_state := TO_STRING(old_state);
+job_event_report.record_time := record_time;
+job_event_report.subject := subject;
 
 subscribe_job_event := TRUE;]]></ST>
       </Implementation>
@@ -97,16 +114,19 @@ subscribe_job_event := TRUE;]]></ST>
       <LineId Id="56" Count="0" />
       <LineId Id="46" Count="1" />
       <LineId Id="8" Count="0" />
+      <LineId Id="65" Count="0" />
     </LineIds>
     <LineIds Name="FB_Observer.subscribe_job_event">
-      <LineId Id="34" Count="1" />
-      <LineId Id="120" Count="5" />
-      <LineId Id="36" Count="3" />
-      <LineId Id="93" Count="1" />
-      <LineId Id="40" Count="0" />
-      <LineId Id="71" Count="0" />
-      <LineId Id="70" Count="0" />
-      <LineId Id="41" Count="7" />
+      <LineId Id="261" Count="18" />
+      <LineId Id="284" Count="1" />
+      <LineId Id="295" Count="3" />
+      <LineId Id="286" Count="0" />
+      <LineId Id="288" Count="3" />
+      <LineId Id="299" Count="4" />
+      <LineId Id="305" Count="0" />
+      <LineId Id="304" Count="0" />
+      <LineId Id="306" Count="0" />
+      <LineId Id="292" Count="0" />
       <LineId Id="14" Count="0" />
     </LineIds>
   </POU>

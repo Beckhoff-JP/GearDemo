@@ -12,13 +12,21 @@ VAR
 	position_at_task_start_point : LREAL;
 	position_diff : LREAL;
 	dc_time_array : ARRAY [0..1] OF T_DCTIME32;
-
+	
+	fb_timezone_info : FB_GetTimeZoneInformation := (bExecute := TRUE);
+	event_messages : ARRAY [1..3] OF STRING;
+	
 	fbPower1:mc_power;
 	fbPower2:mc_power;
-	fbJog:MC_Jog;
+	fbStop	: MC_Stop;
+	fbGearOut : MC_GearOut;
+	fbReset	: MC_Reset;
+	
+	stop_job : FB_Executor;
 	basic_job : FB_Executor;
 	demo_job : FB_Executor;
 	gear_in_job : FB_Executor;
+	gear_out_job : FB_Executor;
 	init_pos_job : FB_Executor;
 	jog_plus_job : FB_Executor;
 	jog_minus_job : FB_Executor;
@@ -38,14 +46,16 @@ VAR
 	sleep_creator : FutureSleepCreator;
 
 	
-	iState:INT;
+	iState:UINT;
+	stopState : UINT;
 	stAxis1:axis_ref;
 	stAxis2:axis_ref;
 	bStart: BOOL;
 	bJogPlus: BOOL;
 	bJogMinus: BOOL;
 	bPower: BOOL;
-	_bPower : BOOL;
+	_bPower :BOOL;
+	bPowerOn : BOOL;
 	iPowerState : UINT;
 	bReset:BOOL;
 	bError:BOOL;
@@ -55,11 +65,14 @@ VAR
 	boot_up : BOOL := TRUE;
 	i: UINT;
 	
-	quit: INT;
+	quit: INT;	
 END_VAR
 ]]></Declaration>
     <Implementation>
-      <ST><![CDATA[
+      <ST><![CDATA[// Update state data for axis_ref.Status structure.
+stAxis1.ReadStatus();
+stAxis2.ReadStatus();
+
 act_dc_time := F_GetActualDcTime64();
 dc_task_time := F_GetCurDcTaskTime64();
 dc_tick_time := F_GetCurDcTickTime64();
@@ -73,16 +86,25 @@ position_diff := stAxis1.NcToPlc.ActPos - fbConvertDcTimeToPos.fPosition;
 diff_time := act_dc_time - dc_task_time;
 
 IF boot_up THEN
+	(*
+	Initial setting at the time of starting PLC.
+	*)
+	
+	// Creating basic running job container instance
 	basic_job.create_container(ContainerType.PARALLEL_QUEUE, 'BASIC');
+	// Enable continuous mode : Continue running job after all queued jobs are purged.
 	basic_job.continuous_mode := TRUE;
+	// Set top level job name
 	basic_job.id := 'M1';
+	// Set observer object: for event logging, IoT
 	basic_job.job_event_reporter := fb_observer;
+	// Create position initialization job.
 	JobCreate_PosInit(init_pos_job);
+	// Create gear-in job.
 	JobCreate_GearIn(gear_in_job);
+	// Create demo job.
 	JobCreateDemo(demo_job);
-	
-	
-
+	// Create inching job
 	mc_inching_future_creator.set_parameters(stAxis2, TRUE,1 , 100);
 	jog_plus_job.create_future(mc_inching_future_creator,'JOG_PLUS');
 	
@@ -92,32 +114,66 @@ IF boot_up THEN
 	boot_up := FALSE;
 END_IF
 
+// Power control
+// Power off after gear decoupled and job unlinked.
 
-fbPower1(Axis := stAxis1, Enable := bPower, Enable_Positive := TRUE, Enable_Negative := TRUE, Override := 100.0);
-fbPower2(Axis := stAxis2, Enable := bPower, Enable_Positive := TRUE, Enable_Negative := TRUE, Override := 100.0);
-
-(*
-IF NOT fbPower1.Status AND NOT fbPower2.Status THEN
-	IF demo_job.reset(FALSE) THEN
-		iState := 0;
-	END_IF
+IF NOT bPower THEN
+	CASE stopState OF
+		0: // Forced stop if any jobs are working.
+			IF bPowerOn THEN
+				IF stAxis1.Status.HasJob THEN
+					fbStop(Axis := stAxis1, Execute := TRUE);
+				ELSE
+					fbStop(Axis := stAxis1, Execute := FALSE);
+					IF NOT fbStop.Busy THEN
+						stopState := 1;
+					END_IF
+				END_IF
+			END_IF
+		1: // make job state abort
+			IF basic_job.abort() THEN
+				stopState := 2;	
+			END_IF
+		2: // Decouple stAxis2 from stAxis1.
+			IF stAxis2.Status.Coupled THEN
+				fbGearOut(Slave := stAxis2,Execute := TRUE);
+			ELSE
+				fbGearOut(Slave := stAxis2,Execute := FALSE);
+				stopState := 3;
+			END_IF
+		3: // Unlink machie jobs and reset state machine. 
+			IF basic_job.reset(FALSE) THEN
+				IF basic_job.init() THEN
+					bPowerOn := FALSE;
+					bStart := FALSE;
+					stopState := 0;
+					iState := 0;
+				END_IF
+			END_IF	
+	END_CASE
 END_IF
-*)
+
+IF bPower AND NOT _bPower THEN
+	bPowerOn := TRUE;
+END_IF
+
+_bPower := bPower;
+
+fbPower1(Axis := stAxis1, Enable := bPowerOn, Enable_Positive := TRUE, Enable_Negative := TRUE, Override := 100.0);
+fbPower2(Axis := stAxis2, Enable := bPowerOn, Enable_Positive := TRUE, Enable_Negative := TRUE, Override := 100.0);
 
 CASE iState OF
-	0:
+	0: // Position reset after Power ON
 		IF fbPower1.Status AND fbPower2.Status THEN
-			IF init_pos_job.init() THEN
-				basic_job.children.append_job(init_pos_job);
-				iState := 1;
-			END_IF
+			init_pos_job.init();
+			basic_job.children.append_job(init_pos_job);
+			iState := 1;
 		END_IF
-	1:
+	1: // Vacant
 		IF init_pos_job.done THEN
 			iState := 2;
 		END_IF
-	2:
-		//fbJog(Axis:=stAxis1 , JogForward:=bJogPlus ,JogBackwards:=bJogMinus, Position := 1, Velocity := 100, Mode := E_JogMode.MC_JOGMODE_INCHING );
+	2: // Adjustment coupling position between each gear, and to be start.
 		IF bJogPlus THEN
 			IF jog_plus_job.init() THEN
 				basic_job.children.append_job(jog_plus_job);
@@ -133,19 +189,23 @@ CASE iState OF
 		END_IF
 
 		IF bStart THEN
-			IF gear_in_job.init() THEN
-				basic_job.children.append_job(gear_in_job);
-				iState := 3;
-			END_IF
+				IF NOT stAxis2.Status.Coupled THEN
+					IF gear_in_job.init() THEN
+						basic_job.children.append_job(gear_in_job);
+						iState := 3;
+					END_IF
+				ELSE
+					iState := 3;
+				END_IF
 		END_IF
-	3:
+	3: // Setting working job ID into demo_job instance and append it as machine job.
 		IF demo_job.init() THEN
 			work_number := work_number + 1;
 			demo_job.id := TO_STRING(work_number);
 			basic_job.children.append_job(demo_job);
 			iState := 4;
 		END_IF
-	4:
+	4: // Decision to finish or to rerun demo_job by Start button.
 		IF demo_job.done THEN
 			IF bStart THEN
 				iState := 3;
@@ -154,16 +214,6 @@ CASE iState OF
 			END_IF
 		END_IF
 END_CASE
-
-
-IF bPower THEN
-	job_reset := TRUE;
-ELSE
-	IF job_reset AND basic_job.reset(FALSE) THEN
-		iState := 0;
-		job_reset := FALSE;
-	END_IF
-END_IF
 
 basic_job.execute();
 
@@ -177,210 +227,21 @@ IF bReset THEN
 	END_IF 
 END_IF
 
+fbReset(Axis := stAxis1, Execute := bReset);
+fbReset(Axis := stAxis2, Execute := bReset);
+
+
 IF basic_job.ready THEN
 	basic_job.start();
 END_IF
 
-(*
+// Event string
 
-CASE iState OF
-0:
- 	IF stAxis1.NcToPlc.ErrorCode = 0 AND  stAxis1.NcToPlc.ErrorCode = 0 THEN
-		iState:=20;
-	ELSE
-		iState:=10;
-	END_IF
-10:
-		fbReset1(Axis:=stAxis1 , Execute:=TRUE , Done=> , Busy=> , Error=> , ErrorID=> );
-		fbReset2(Axis:=stAxis2 , Execute:=TRUE , Done=> , Busy=> , Error=> , ErrorID=> );
-		IF stAxis1.NcToPlc.ErrorCode = 0 AND  stAxis1.NcToPlc.ErrorCode = 0 THEN
-			fbReset1(Axis:=stAxis1 , Execute:=TRUE , Done=> , Busy=> , Error=> , ErrorID=> );
-			fbReset2(Axis:=stAxis2 , Execute:=TRUE , Done=> , Busy=> , Error=> , ErrorID=> );
-			iState:=20;
-		END_IF
-
-20:
-   fbPower1(Axis:=stAxis1 , Enable:=bPower ,	Enable_Positive:=bPower , Enable_Negative:=bPower , Override:=100 , BufferMode:= , Options:=  );
-   fbPower2(Axis:=stAxis2 , Enable:=bPower ,	Enable_Positive:=bPower , Enable_Negative:=bPower , Override:=100 , BufferMode:= , Options:=  );
-	IF fbPower1.Status AND fbPower2.Status AND bPower THEN
-		bAllAxisPowerOn:=TRUE;
-		iState:=50;
-	END_IF
-50:
-	IF bStart THEN
-		iState:=60;
-	END_IF
-	IF NOT bPower THEN
-		iState:=20;
-	END_IF
-	fbJog(Axis:=stAxis2 , JogForward:=bJogPlus ,JogBackwards:=bJogMinus , );
-	
-	
-60:
-   fbSetPosition1(	Axis:=stAxis1 , 	Execute:=TRUE , Position:=0 ,Mode:= , Options:=  );
-   fbSetPosition2(	Axis:=stAxis2 , 	Execute:=TRUE , Position:=0 ,Mode:= , Options:=  );
-   IF fbSetPosition1.done AND  fbSetPosition2.Done THEN
-	   fbSetPosition1(	Axis:=stAxis1 , 	Execute:=FALSE , Position:=0 ,Mode:= , Options:=  );
-	   fbSetPosition2(	Axis:=stAxis2 , 	Execute:=FALSE , Position:=0 ,Mode:= , Options:=  );
-		iState:=70;	   
-   END_IF
-70:
-	fbGearIn(Master:=stAxis1 ,Slave:=stAxis2 ,Execute:=TRUE ,RatioNumerator:=1 ,RatioDenominator:=1 ,Acceleration:= ,Deceleration:= ,Jerk:= ,BufferMode:= ,	Options:= );
-	IF fbGearIn.InGear THEN
-		bInsync:=TRUE;
-		fbGearIn(Master:=stAxis1 ,Slave:=stAxis2 ,Execute:=FALSE ,RatioNumerator:=1 ,RatioDenominator:=1 ,Acceleration:= ,Deceleration:= ,Jerk:= ,BufferMode:= ,	Options:= );
-		iState:=100;
-	END_IF
-100:
-	iMoveCount:=0;
-	iMoveCount1:=0;
-	lrDiatance:=20;
-	iState:=110;
-	
-110://Demo1
-	iState:=120;
-120:
-    fbMoveRel(Axis:=stAxis1 ,Execute:=TRUE ,Distance:=lrDiatance ,Velocity:=200 );
-    IF fbMoveRel.Done THEN
-		fbMoveRel(Axis:=stAxis1 ,Execute:=FALSE ,Distance:=lrDiatance ,Velocity:=200 );
-		iState:=130;
-	END_IF
-130:	
-   tWaitTimer1(IN:=TRUE,PT:=T#100MS);
-   IF tWaitTimer1.Q THEN
-	   tWaitTimer1(IN:=FALSE);
-		iState:=140;
-		iMoveCount:=iMoveCount+1;
-   END_IF
-140:
-	IF iMoveCount > 18 THEN
-		iState:=150;
-	ELSE
-		iState:=110;
-     END_IF
-150:
-    fbMoveAbs1(Axis:=stAxis1 ,	Execute:= TRUE, Position:= 0,Velocity:=700 );	
-	IF fbMoveAbs1.Done THEN
-		iMoveCount1:=iMoveCount1+1;
-		fbMoveAbs1(Axis:=stAxis1 ,	Execute:= FALSE, Position:= 0,Velocity:=700 );
-		IF iMoveCount1 > 4 THEN
-			iState:=200;
-		ELSE
-			iMoveCount:=0;
-			IF lrDiatance = 20 THEN
-				lrDiatance := -20;
-			ELSE
-				lrDiatance := 20;
-			END_IF
-			iState:=110;
-		END_IF
-		
-	END_IF
-200://Demo2
-   tWaitTimer2(IN:=TRUE,PT:=T#100MS);
-   IF tWaitTimer2.Q THEN
-	   tWaitTimer2(IN:=FALSE);
-		iState:=210;
-		iMoveCount:=iMoveCount+1;
-   END_IF
-210:
-	fbMoveVelo(	Axis:=stAxis1 ,Execute:=TRUE , Velocity:=1000 ,Direction:=MC_Direction.MC_Positive_Direction );
-    IF fbMoveVelo.InVelocity THEN
-		fbMoveVelo(	Axis:=stAxis1 ,Execute:=FALSE , Velocity:=1000 ,Direction:=MC_Direction.MC_Positive_Direction );
-		iState:=220;
-	END_IF
-220:
-   tWaitTimer3(IN:=TRUE,PT:=T#5S);
-   IF tWaitTimer3.Q THEN
-	   tWaitTimer3(IN:=FALSE);
-		iState:=230;
-   END_IF
-230:
-	fbMoveVelo(	Axis:=stAxis1 ,Execute:=TRUE , Velocity:=500 ,Direction:=MC_Direction.MC_Positive_Direction );
-    IF fbMoveVelo.InVelocity THEN
-		fbMoveVelo(	Axis:=stAxis1 ,Execute:=FALSE , Velocity:=1000 ,Direction:=MC_Direction.MC_Positive_Direction );
-		iState:=240;
-	END_IF
-240:
-   tWaitTimer4(IN:=TRUE,PT:=T#5S);
-   IF tWaitTimer4.Q THEN
-	   tWaitTimer4(IN:=FALSE);
-		iState:=250;
-   END_IF
-250:
-	fbStop(Axis:=stAxis1 , Execute:=TRUE,Deceleration:=100,Jerk:=1000  );
-	IF fbStop.Done THEN
-		fbStop(Axis:=stAxis1 , Execute:=FALSE  );
-		iState:=260;
-	END_IF
-260:
-  tWaitTimer5(IN:=TRUE,PT:=T#3000MS);
-   IF tWaitTimer5.Q THEN
-	   tWaitTimer5(IN:=FALSE);
-		iState:=270;
-   END_IF
-270:
-    fbMoveAbs3(Axis:=stAxis1 ,	Execute:= TRUE, Position:= 0,Velocity:=1000 );	
-	tWaitTimer6(IN:=TRUE,PT:=T#5S);
-	IF tWaitTimer6.Q THEN
-		fbMoveAbs3(Axis:=stAxis1 ,	Execute:= FALSE, Position:= 0,Velocity:=1000 );	
-	   tWaitTimer6(IN:=FALSE);
-		iState:=280;
-	END_IF
-	IF fbMoveAbs3.Done THEN
-		iState:=300;
-		fbMoveAbs3(Axis:=stAxis1 ,	Execute:= FALSE, Position:= 0,Velocity:=1000);
-	END_IF
-280:
-    fbMoveAbs2(Axis:=stAxis1 ,	Execute:= TRUE, Position:= 0,Velocity:=500 );	
-	IF fbMoveAbs2.Done THEN
-		iState:=1000;
-		fbMoveAbs2(Axis:=stAxis1 ,	Execute:= FALSE, Position:= 0,);
-	END_IF
-
-	
-1000: //End Prodcution Code
-	IF NOT bStart THEN
-		iState:=1010;
-	ELSE
-		iState:=100;
-	END_IF
-1010:
-  fbGearOut(Slave:=stAxis2 , Execute:=TRUE );
-  IF fbGearOut.Done THEN
-		bInsync:=FALSE;
-	   fbGearOut(Slave:=stAxis2 , Execute:=FALSE );
-		iState:=50;
-  END_IF
-
-2000: //error Handle
-  fbGearO/.ut(Slave:=stAxis2 , Execute:=TRUE );
-  IF fbGearOut.Done THEN
-	bInsync:=FALSE;
-	fbGearOut(Slave:=stAxis2 , Execute:=FALSE );
-	iState:=2010;
-  END_IF
-2010:
-	bPower:=FALSE;
-  	fbPower1(Axis:=stAxis1 , Enable:=bPower ,	Enable_Positive:=bPower , Enable_Negative:=bPower , Override:=100 , BufferMode:= , Options:=  );
-   	fbPower2(Axis:=stAxis2 , Enable:=bPower ,	Enable_Positive:=bPower , Enable_Negative:=bPower , Override:=100 , BufferMode:= , Options:=  );
-	IF NOT fbPower1.Status AND NOT fbPower2.Status THEN
-		bAllAxisPowerOn:=FALSE;
-		iState:=2020;
-	END_IF
-2020:
-	fbReset1(Axis:=stAxis1 , Execute:= bReset);
-	fbReset2(Axis:=stAxis2 , Execute:= bReset);
-	bReset:=FALSE;
-	IF stAxis1.NcToPlc.ErrorCode = 0 AND stAxis2.NcToPlc.ErrorCode = 0 THEN
-		bError:=FALSE;
-		fbReset1(Axis:=stAxis1 , Execute:= FALSE);
-		fbReset2(Axis:=stAxis2 , Execute:= FALSE);
-		iState:=0;
-	END_IF 
-END_CASE
-
-*)]]></ST>
+IF fb_observer.job_event_report.new_state = TO_STRING(E_FutureExecutionState.process) THEN
+	event_messages[1] := SYSTEMTIME_TO_STRING(FILETIME64_TO_SYSTEMTIME(fb_observer.job_event_report.record_time));
+	event_messages[2] := fb_observer.job_event_report.future_name;
+	event_messages[3] := fb_observer.job_event_report.job_id;
+END_IF]]></ST>
     </Implementation>
     <Method Name="Execution" Id="{d52dbacd-3d99-403b-bb01-e4478be4b44b}">
       <Declaration><![CDATA[METHOD Execution : BOOL
@@ -415,6 +276,20 @@ job.create_future(mc_gear_in_future_creator,'Gear IN');
 ]]></ST>
       </Implementation>
     </Method>
+    <Method Name="JobCreate_GearOut" Id="{8481b2d7-af94-4ac5-a0a7-0d042155ce39}">
+      <Declaration><![CDATA[METHOD JobCreate_GearOut : BOOL
+VAR_INPUT
+	job : REFERENCE TO FB_Executor;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Gear In
+mc_gear_out_future_creator.set_parameters(stAxis2);
+job.create_future(mc_gear_out_future_creator,'Gear OUT');
+]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="JobCreate_PosInit" Id="{8ecc2f01-c3e3-4110-a58b-a3226565c5d4}">
       <Declaration><![CDATA[METHOD JobCreate_PosInit : BOOL
 VAR_INPUT
@@ -435,6 +310,46 @@ _job_temp REF= job.children.create_job(mc_set_position_future_creator,'AXIS2_POS
 ]]></ST>
       </Implementation>
     </Method>
+    <Method Name="JobCreate_Power" Id="{18a6dd20-4504-4367-a000-7e9c44ad113a}">
+      <Declaration><![CDATA[METHOD JobCreate_Power : BOOL
+VAR_INPUT
+	power_on_job : REFERENCE TO FB_Executor;
+	power_off_job : REFERENCE TO FB_Executor;
+END_VAR
+VAR
+	_job_temp	: REFERENCE TO FB_Executor; // reference to job object for working.
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[power_on_job.create_container(ContainerType.PARALLEL, 'POWER_ON');
+power_off_job.create_container(ContainerType.PARALLEL, 'POWER_OFF');
+// position set to 0
+mc_power_future_creator.set_parameters(stAxis1, TRUE);
+power_on_job.children.create_job(mc_power_future_creator,'AXIS1_POWER_ON');
+mc_power_future_creator.set_parameters(stAxis2, TRUE);
+power_on_job.children.create_job(mc_power_future_creator,'AXIS2_POWER_ON');
+
+mc_power_future_creator.set_parameters(stAxis1, FALSE);
+power_off_job.children.create_job(mc_power_future_creator,'AXIS1_POWER_OFF');
+mc_power_future_creator.set_parameters(stAxis2, FALSE);
+power_off_job.children.create_job(mc_power_future_creator,'AXIS2_POWER_OFF');
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="JobCreate_Stop" Id="{1ad0fcd6-0e50-425e-8238-352c792d91f9}">
+      <Declaration><![CDATA[METHOD JobCreate_Stop : BOOL
+VAR_INPUT
+	job : REFERENCE TO FB_Executor;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[mc_stop_future_creator.set_parameters(stAxis1,0,0);
+job.create_future(mc_stop_future_creator,'STOP');
+]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="JobCreateDemo" Id="{c6c18e30-8bba-4c6d-806d-02b28dd2a277}">
       <Declaration><![CDATA[METHOD JobCreateDemo : BOOL
 VAR_INPUT
@@ -442,6 +357,7 @@ VAR_INPUT
 END_VAR
 VAR
 	_job_temp : REFERENCE TO FB_Executor;
+	_job_temp_parent : REFERENCE TO FB_Executor;
 	sleep : POINTER TO FutureSleep;
 	sleep_creator : FutureSleepCreator;
 
@@ -458,52 +374,60 @@ END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[base_job.create_container(ContainerTYpe.BATCH, 'DEMO_JOB');
 // Sequence
+_job_temp_parent REF= base_job.children.create_container(ContainerTYpe.BATCH, 'STEP MOVING');
 FOR i := 1 TO 10 DO
 
 	mc_move_rel_future_creator.set_parameters(stAxis1,20,200,0,0,0,0);
-	_job_temp REF= base_job.children.create_job(mc_move_rel_future_creator,CONCAT('MOVE20_', TO_STRING(i)));
+	_job_temp REF= _job_temp_parent.children.create_job(mc_move_rel_future_creator,'Move +20 deg, 200 deg/s');
 
 	sleep_creator.sleep_time := T#100MS;
-	_job_temp REF= base_job.children.create_job(sleep_creator,CONCAT('WAIT_100MS_', TO_STRING(i)));
+	_job_temp REF= _job_temp_parent.children.create_job(sleep_creator,'Wait 100ms');
 	
 END_FOR
 
 // position set to 0
 
 mc_move_abs_future_creator.set_parameters(stAxis1,0,200,0,0,0,0);
-_job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,CONCAT('MOVE20_', TO_STRING(i)));
+_job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'Back to home');
 
 FOR i := 1 TO 10 DO
 
 	mc_move_rel_future_creator.set_parameters(stAxis1,-20,200,0,0,0,0);
-	_job_temp REF= base_job.children.create_job(mc_move_rel_future_creator,CONCAT('MOVE-20_', TO_STRING(i)));
+	_job_temp REF= base_job.children.create_job(mc_move_rel_future_creator,'Move -20 deg, 200 deg/s');
 
 	sleep_creator.sleep_time := T#100MS;
-	_job_temp REF= base_job.children.create_job(sleep_creator,CONCAT('WAIT_100MS_', TO_STRING(i)));
+	_job_temp REF= base_job.children.create_job(sleep_creator,'Wait 100ms');
 	
 END_FOR
 
 // position to 0
 
 mc_move_abs_future_creator.set_parameters(stAxis1,0,200,0,0,0,0);
-_job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'MOVE_HOME');
+_job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'Back to home');
 
 sleep_creator.sleep_time := T#100MS;
-_job_temp REF= base_job.children.create_job(sleep_creator,'WAIT_100MS');
+_job_temp REF= base_job.children.create_job(sleep_creator,'Wait 100ms');
 
 // 1000deg/s -> 500deg/s
 
 mc_move_velocity_future_creator.set_parameters(stAxis1,MC_Direction.MC_Positive_Direction,1000,0,0,0,0);
-_job_temp REF= base_job.children.create_job(mc_move_velocity_future_creator,'VELO-1000');
+_job_temp REF= base_job.children.create_job(mc_move_velocity_future_creator,'Move velocity');
 
 sleep_creator.sleep_time := T#5S;
-_job_temp REF= base_job.children.create_job(sleep_creator,'WAIT_5S');
+_job_temp REF= base_job.children.create_job(sleep_creator,'1000 deg/s 5 seconds');
 
 mc_move_velocity_future_creator.set_parameters(stAxis1,MC_Direction.MC_Positive_Direction,500,0,0,0,0);
-_job_temp REF= base_job.children.create_job(mc_move_velocity_future_creator,'VELO-500');
+_job_temp REF= base_job.children.create_job(mc_move_velocity_future_creator,'Move velocity');
 
 sleep_creator.sleep_time := T#5S;
-_job_temp REF= base_job.children.create_job(sleep_creator,'WAIT_5S');
+_job_temp REF= base_job.children.create_job(sleep_creator,'500 deg/s 5 seconds');
+
+mc_move_velocity_future_creator.set_parameters(stAxis1,MC_Direction.MC_Positive_Direction,250,0,0,0,0);
+_job_temp REF= base_job.children.create_job(mc_move_velocity_future_creator,'Move velocity');
+
+sleep_creator.sleep_time := T#5S;
+_job_temp REF= base_job.children.create_job(sleep_creator,'250 deg/s 5 seconds');
+
 
 mc_stop_future_creator.set_parameters(stAxis1,0,0);
 _job_temp REF= base_job.children.create_job(mc_stop_future_creator,'STOP');
@@ -511,11 +435,12 @@ _job_temp REF= base_job.children.create_job(mc_stop_future_creator,'STOP');
 // position to 0
 
 mc_move_abs_future_creator.set_parameters(stAxis1,0,1000,0,0,0,0);
-_job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'MOVE_HOME');
+_job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'Back to home');
 ]]></ST>
       </Implementation>
     </Method>
     <LineIds Name="MAIN">
+      <LineId Id="7987" Count="2" />
       <LineId Id="7433" Count="0" />
       <LineId Id="7422" Count="0" />
       <LineId Id="7427" Count="0" />
@@ -528,34 +453,68 @@ _job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'MOVE_HOM
       <LineId Id="7436" Count="1" />
       <LineId Id="7424" Count="0" />
       <LineId Id="6897" Count="0" />
+      <LineId Id="8387" Count="0" />
+      <LineId Id="8389" Count="0" />
+      <LineId Id="8388" Count="0" />
+      <LineId Id="8390" Count="1" />
       <LineId Id="7628" Count="0" />
+      <LineId Id="8393" Count="0" />
       <LineId Id="6899" Count="0" />
+      <LineId Id="8394" Count="0" />
       <LineId Id="7689" Count="0" />
-      <LineId Id="6900" Count="2" />
+      <LineId Id="8395" Count="0" />
+      <LineId Id="6900" Count="0" />
+      <LineId Id="8396" Count="0" />
+      <LineId Id="6901" Count="0" />
+      <LineId Id="8397" Count="0" />
+      <LineId Id="6902" Count="0" />
+      <LineId Id="8398" Count="0" />
       <LineId Id="7157" Count="0" />
-      <LineId Id="7626" Count="1" />
-      <LineId Id="7327" Count="0" />
+      <LineId Id="8400" Count="0" />
       <LineId Id="7300" Count="0" />
       <LineId Id="7296" Count="0" />
       <LineId Id="7326" Count="0" />
       <LineId Id="7301" Count="1" />
       <LineId Id="7295" Count="0" />
       <LineId Id="6903" Count="1" />
+      <LineId Id="8139" Count="1" />
+      <LineId Id="8386" Count="0" />
       <LineId Id="6921" Count="0" />
+      <LineId Id="8141" Count="0" />
+      <LineId Id="8268" Count="0" />
+      <LineId Id="8271" Count="0" />
+      <LineId Id="8291" Count="0" />
+      <LineId Id="8412" Count="7" />
+      <LineId Id="8294" Count="0" />
+      <LineId Id="8402" Count="0" />
+      <LineId Id="8420" Count="2" />
+      <LineId Id="8276" Count="0" />
+      <LineId Id="8285" Count="3" />
+      <LineId Id="8296" Count="0" />
+      <LineId Id="8283" Count="0" />
+      <LineId Id="8269" Count="0" />
+      <LineId Id="8313" Count="1" />
+      <LineId Id="8317" Count="0" />
+      <LineId Id="8319" Count="0" />
+      <LineId Id="8318" Count="0" />
+      <LineId Id="8315" Count="1" />
+      <LineId Id="8312" Count="0" />
+      <LineId Id="8270" Count="0" />
+      <LineId Id="7992" Count="0" />
+      <LineId Id="8153" Count="0" />
+      <LineId Id="8155" Count="2" />
+      <LineId Id="8152" Count="0" />
+      <LineId Id="8150" Count="0" />
       <LineId Id="7161" Count="0" />
       <LineId Id="7165" Count="1" />
-      <LineId Id="7328" Count="0" />
-      <LineId Id="6925" Count="5" />
-      <LineId Id="7329" Count="0" />
       <LineId Id="6931" Count="3" />
       <LineId Id="7820" Count="0" />
       <LineId Id="7823" Count="0" />
       <LineId Id="7829" Count="0" />
-      <LineId Id="7822" Count="0" />
       <LineId Id="6935" Count="0" />
       <LineId Id="7828" Count="0" />
       <LineId Id="7825" Count="2" />
-      <LineId Id="6937" Count="1" />
+      <LineId Id="6937" Count="0" />
       <LineId Id="7277" Count="0" />
       <LineId Id="7317" Count="0" />
       <LineId Id="7320" Count="1" />
@@ -567,10 +526,12 @@ _job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'MOVE_HOM
       <LineId Id="7291" Count="0" />
       <LineId Id="7168" Count="0" />
       <LineId Id="6940" Count="0" />
-      <LineId Id="7307" Count="0" />
-      <LineId Id="7310" Count="0" />
-      <LineId Id="7332" Count="0" />
-      <LineId Id="7309" Count="0" />
+      <LineId Id="7977" Count="0" />
+      <LineId Id="7981" Count="0" />
+      <LineId Id="7980" Count="0" />
+      <LineId Id="7986" Count="0" />
+      <LineId Id="7983" Count="2" />
+      <LineId Id="7979" Count="0" />
       <LineId Id="6943" Count="0" />
       <LineId Id="7333" Count="0" />
       <LineId Id="7335" Count="0" />
@@ -582,17 +543,19 @@ _job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'MOVE_HOM
       <LineId Id="7341" Count="1" />
       <LineId Id="7339" Count="1" />
       <LineId Id="6955" Count="1" />
-      <LineId Id="7802" Count="2" />
-      <LineId Id="7836" Count="0" />
-      <LineId Id="7835" Count="0" />
-      <LineId Id="7831" Count="0" />
-      <LineId Id="7837" Count="0" />
-      <LineId Id="7833" Count="1" />
-      <LineId Id="7832" Count="0" />
-      <LineId Id="7805" Count="14" />
+      <LineId Id="7805" Count="11" />
+      <LineId Id="8263" Count="0" />
+      <LineId Id="8265" Count="1" />
+      <LineId Id="8264" Count="0" />
+      <LineId Id="7817" Count="2" />
       <LineId Id="7801" Count="0" />
-      <LineId Id="6957" Count="199" />
+      <LineId Id="7896" Count="0" />
       <LineId Id="1144" Count="0" />
+      <LineId Id="7905" Count="1" />
+      <LineId Id="7917" Count="0" />
+      <LineId Id="7913" Count="0" />
+      <LineId Id="7910" Count="0" />
+      <LineId Id="7907" Count="0" />
     </LineIds>
     <LineIds Name="MAIN.Execution">
       <LineId Id="6" Count="3" />
@@ -607,6 +570,12 @@ _job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'MOVE_HOM
       <LineId Id="24" Count="0" />
       <LineId Id="5" Count="0" />
     </LineIds>
+    <LineIds Name="MAIN.JobCreate_GearOut">
+      <LineId Id="23" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
     <LineIds Name="MAIN.JobCreate_PosInit">
       <LineId Id="11" Count="1" />
       <LineId Id="27" Count="0" />
@@ -615,9 +584,26 @@ _job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'MOVE_HOM
       <LineId Id="17" Count="1" />
       <LineId Id="5" Count="0" />
     </LineIds>
+    <LineIds Name="MAIN.JobCreate_Power">
+      <LineId Id="11" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="45" Count="1" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="47" Count="4" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.JobCreate_Stop">
+      <LineId Id="68" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
     <LineIds Name="MAIN.JobCreateDemo">
       <LineId Id="341" Count="0" />
-      <LineId Id="243" Count="1" />
+      <LineId Id="243" Count="0" />
+      <LineId Id="391" Count="0" />
+      <LineId Id="244" Count="0" />
       <LineId Id="360" Count="0" />
       <LineId Id="245" Count="1" />
       <LineId Id="361" Count="0" />
@@ -645,6 +631,9 @@ _job_temp REF= base_job.children.create_job(mc_move_abs_future_creator,'MOVE_HOM
       <LineId Id="302" Count="1" />
       <LineId Id="370" Count="0" />
       <LineId Id="307" Count="1" />
+      <LineId Id="393" Count="0" />
+      <LineId Id="395" Count="4" />
+      <LineId Id="394" Count="0" />
       <LineId Id="371" Count="0" />
       <LineId Id="312" Count="1" />
       <LineId Id="317" Count="1" />

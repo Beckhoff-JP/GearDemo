@@ -7,6 +7,8 @@ STRUCT
 	{attribute 'TcAnalytics'}
 	subject	: STRING(256);
 	 {attribute 'TcAnalytics'}
+	future_name	: STRING(256);
+	 {attribute 'TcAnalytics'}
 	job_id	: STRING(256);
 	 {attribute 'TcAnalytics'}
 	old_state	: STRING(16);
